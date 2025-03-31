@@ -15,7 +15,9 @@ from collections import namedtuple
 from functools import lru_cache
 from scipy import sparse as sp
 import copy
-import scipy.cluster.hierarchy as sch
+from copy import deepcopy
+from pathlib import Path
+from PIL import Image
 
 from mast3r.utils.misc import mkdir_for, hash_md5
 from mast3r.cloud_opt.utils.losses import gamma_loss
@@ -24,12 +26,53 @@ from mast3r.fast_nn import fast_reciprocal_NNs, merge_corres
 
 import mast3r.utils.path_to_dust3r  # noqa
 from dust3r.utils.geometry import inv, geotrf  # noqa
-from dust3r.utils.device import to_cpu, to_numpy, todevice  # noqa
+from dust3r .utils.device import to_cpu, to_numpy, todevice  # noqa
 from dust3r.post_process import estimate_focal_knowing_depth  # noqa
 from dust3r.optim_factory import adjust_learning_rate_by_lr  # noqa
 from dust3r.cloud_opt.base_opt import clean_pointcloud
 from dust3r.viz import SceneViz
+import cv2
+from evo.core import sync
+from evo.core.metrics import PoseRelation, Unit
+from evo.core.trajectory import PosePath3D, PoseTrajectory3D
+from evo.tools import file_interface, plot
+from scipy.spatial.transform import Rotation
 
+def c2w_to_tumpose(c2w):
+    """
+    Convert a camera-to-world matrix to a tuple of translation and rotation
+
+    input: c2w: 4x4 matrix
+    output: tuple of translation and rotation (x y z qw qx qy qz)
+    """
+    # convert input to numpy
+    c2w = to_numpy(c2w)
+    xyz = c2w[:3, -1]
+    rot = Rotation.from_matrix(c2w[:3, :3])
+    qx, qy, qz, qw = rot.as_quat()
+    tum_pose = np.concatenate([xyz, [qw, qx, qy, qz]])
+    return tum_pose
+
+def make_traj(args) -> PoseTrajectory3D:
+    if isinstance(args, tuple) or isinstance(args, list):
+        traj, tstamps = args
+        return PoseTrajectory3D(
+            positions_xyz=traj[:, :3],
+            orientations_quat_wxyz=traj[:, 3:],
+            timestamps=tstamps,
+        )
+    assert isinstance(args, PoseTrajectory3D), type(args)
+    return deepcopy(args)
+
+def save_trajectory_tum_format(traj, filename):
+    traj = make_traj(traj)
+    tostr = lambda a: " ".join(map(str, a))
+    with Path(filename).open("w") as f:
+        for i in range(traj.num_poses):
+            f.write(
+                f"{traj.timestamps[i]} {tostr(traj.positions_xyz[i])} {tostr(traj.orientations_quat_wxyz[i][[0,1,2,3]])}\n"
+            )
+    print(f"Saved trajectory to {filename}")
 
 class SparseGA():
     def __init__(self, img_paths, pairs_in, res_fine, anchors, canonical_paths=None):
@@ -91,6 +134,7 @@ class SparseGA():
         if clean_depth:
             confs = clean_pointcloud(confs, self.intrinsics, inv(self.cam2w), depthmaps, pts3d)
 
+
         return pts3d, depthmaps, confs
 
     def get_pts3d_colors(self):
@@ -108,6 +152,149 @@ class SparseGA():
                             [p.clip(min=-50, max=50) for p in pts3d],
                             masks=[c > 1 for c in confs])
 
+    def get_tum_poses(self):
+        poses = self.get_im_poses()
+        tt = np.arange(len(poses)).astype(float)
+        tum_poses = [c2w_to_tumpose(p) for p in poses]
+        tum_poses = np.stack(tum_poses, 0)
+        return [tum_poses, tt]
+
+    def save_tum_poses(self, path):
+        traj = self.get_tum_poses()
+        save_trajectory_tum_format(traj, path)
+        return traj[0]  # return the poses
+
+    def save_focals(self, path):
+        # convert focal to txt
+        focals = self.get_focals()
+        np.savetxt(path, focals.detach().cpu().numpy(), fmt='%.6f')
+        return focals
+
+    def save_intrinsics(self, path):
+        K_raw = self.intrinsics
+        K = K_raw.reshape(-1, 9)
+        np.savetxt(path, K.detach().cpu().numpy(), fmt='%.6f')
+        return K_raw
+
+    def save_depth_maps(self, path):
+        depth_maps = self.get_depthmaps()
+        h, w, _ = self.imgs[0].shape
+        if len(depth_maps[0].shape) != 2:
+            depth_maps[0] = depth_maps[0].reshape(h, w)
+            depth_maps[1] = depth_maps[1].reshape(h, w)
+        images_left = []
+        images_right = []
+        save_path = os.path.join(path, "metric_depth")
+        os.makedirs(save_path, exist_ok=True)
+        left_path = os.path.join(save_path, "left")
+        right_path = os.path.join(save_path, "right")
+        os.makedirs(left_path, exist_ok=True)
+        os.makedirs(right_path, exist_ok=True)
+        for i, depth_map in enumerate(depth_maps):
+            # Apply color map to depth map
+            depth_map_colored = cv2.applyColorMap((depth_map * 255).detach().cpu().numpy().astype(np.uint8),
+                                                  cv2.COLORMAP_JET)
+            img_name = "%06d.png"%(i/2)
+            if i%2 == 0:
+                cv2.imwrite(os.path.join(left_path, img_name), depth_map_colored)
+                images_left.append(Image.open(os.path.join(left_path, img_name)))
+                np.save(os.path.join(left_path, img_name.replace(".png", ".npy")), depth_map_colored)
+            else:
+                cv2.imwrite(os.path.join(right_path, img_name), depth_map_colored)
+                images_right.append(Image.open(os.path.join(right_path, img_name)))
+                np.save(os.path.join(right_path, img_name.replace(".png", ".npy")), depth_map_colored)
+
+
+        images_left[0].save(f'{path}/metric_depth_maps_left.gif', save_all=True, append_images=images_left[1:],
+                            duration=100, loop=0)
+        images_right[0].save(f'{path}/metric_depth_maps_right.gif', save_all=True, append_images=images_right[1:],
+                             duration=100, loop=0)
+        return depth_maps
+
+    # def save_relative_depth_maps(self, path):
+    #     depth_maps = self.get_depthmaps()
+    #     h, w, _ = self.imgs[0].shape
+    #     if len(depth_maps[0].shape) != 2:
+
+
+    #         depth_maps[0] = depth_maps[0].reshape(h, w)
+    #         depth_maps[1] = depth_maps[1].reshape(h, w)
+    #     images = []
+    #     depth_maps = [maps.detach().cpu().numpy() for maps in depth_maps]
+    #     depth_maps = np.stack(depth_maps)
+    #
+    #     max_depth = np.max(depth_maps)
+    #     min_depth = np.min(depth_maps)
+    #
+    #     save_path = os.path.join(path, "relative_depth")
+    #     os.makedirs(save_path, exist_ok=True)
+    #
+    #     for i, depth_map in enumerate(depth_maps):
+    #         img_name = "%06d.png" % (i / 2)
+    #         depth_map = (depth_map - min_depth) / (max_depth - min_depth)
+    #         # Apply color map to depth map
+    #         depth_map_colored = cv2.applyColorMap((depth_map * 255).astype(np.uint8), cv2.COLORMAP_JET)
+    #         cv2.imwrite(os.path.join(save_path, img_name), depth_map_colored)
+    #
+    #         images.append(Image.open(os.path.join(save_path, img_name)))
+    #         np.save(os.path.join(save_path, img_name.replace(".png", ".npy")), depth_map_colored)
+    #
+    #     for idx, img in enumerate(images):
+    #         try:
+    #             print(f"Image {idx}: format={img.format}, size={img.size}, mode={img.mode}")
+    #         except Exception as e:
+    #             print(f"Error with image {idx}: {e}")
+    #
+    #     try:
+    #         images[0].save(f'{path}/relative_depth_maps.gif', save_all=True, append_images=images[1:], duration=100,
+    #                        loop=0)
+    #     except Exception as e:
+    #         print(f"An error occurred: {e}")
+    #
+    #     return depth_maps
+
+    def save_relative_depth_maps(self, path):
+        depth_maps = self.get_depthmaps()
+        h, w, _ = self.imgs[0].shape
+        if len(depth_maps[0].shape) != 2:
+            depth_maps[0] = depth_maps[0].reshape(h, w)
+            depth_maps[1] = depth_maps[1].reshape(h, w)
+        images_left = []
+        images_right = []
+        depth_maps = [maps.detach().cpu().numpy() for maps in depth_maps]
+        depth_maps = np.stack(depth_maps)
+
+        max_depth = np.max(depth_maps)
+        min_depth = np.min(depth_maps)
+
+        save_path = os.path.join(path, "relative_depth")
+        os.makedirs(save_path, exist_ok=True)
+        left_path = os.path.join(save_path, "left")
+        right_path = os.path.join(save_path, "right")
+        os.makedirs(left_path, exist_ok=True)
+        os.makedirs(right_path, exist_ok=True)
+
+
+        for i, depth_map in enumerate(depth_maps):
+            img_name = "%06d.png" % (i / 2)
+            depth_map = (depth_map - min_depth) / (max_depth - min_depth)
+            # Apply color map to depth map
+            depth_map_colored = cv2.applyColorMap((depth_map * 255).astype(np.uint8),cv2.COLORMAP_JET)
+
+            if i % 2 == 0:
+                cv2.imwrite(os.path.join(left_path, img_name), depth_map_colored)
+                images_left.append(Image.open(os.path.join(left_path, img_name)))
+                np.save(os.path.join(left_path, img_name.replace(".png", ".npy")), depth_map_colored)
+            else:
+                cv2.imwrite(os.path.join(right_path, img_name), depth_map_colored)
+                images_right.append(Image.open(os.path.join(right_path, img_name)))
+                np.save(os.path.join(right_path, img_name.replace(".png", ".npy")), depth_map_colored)
+
+        images_left[0].save(f'{path}/relative_depth_maps_left.gif', save_all=True, append_images=images_left[1:], duration=100, loop=0)
+        images_right[0].save(f'{path}/relative_depth_maps_right.gif', save_all=True, append_images=images_right[1:], duration=100, loop=0)
+
+        return depth_maps
+
 
 def convert_dust3r_pairs_naming(imgs, pairs_in):
     for pair_id in range(len(pairs_in)):
@@ -117,7 +304,7 @@ def convert_dust3r_pairs_naming(imgs, pairs_in):
 
 
 def sparse_global_alignment(imgs, pairs_in, cache_path, model, subsample=8, desc_conf='desc_conf',
-                            kinematic_mode='hclust-ward', device='cuda', dtype=torch.float32, shared_intrinsics=False, **kw):
+                            device='cuda', dtype=torch.float32, shared_intrinsics=False, **kw):
     """ Sparse alignment with MASt3R
         imgs: list of image paths
         cache_path: path where to dump temporary files (str)
@@ -138,53 +325,16 @@ def sparse_global_alignment(imgs, pairs_in, cache_path, model, subsample=8, desc
     tmp_pairs, pairwise_scores, canonical_views, canonical_paths, preds_21 = \
         prepare_canonical_data(imgs, pairs, subsample, cache_path=cache_path, mode='avg-angle', device=device)
 
-    # smartly combine all useful data
-    imsizes, pps, base_focals, core_depth, anchors, corres, corres2d, preds_21 = \
-        condense_data(imgs, tmp_pairs, canonical_views, preds_21, dtype)
-
-    # Build kinematic chain
-    if kinematic_mode == 'mst':
-        # compute minimal spanning tree
-        mst = compute_min_spanning_tree(pairwise_scores)
-
-    elif kinematic_mode.startswith('hclust'):
-        mode, linkage = kinematic_mode.split('-')
-
-        # Convert the affinity matrix to a distance matrix (if needed)
-        n_patches = (imsizes // subsample).prod(dim=1)
-        max_n_corres = 3 * torch.minimum(n_patches[:,None], n_patches[None,:])
-        pws = (pairwise_scores.clone() / max_n_corres).clip(max=1)
-        pws.fill_diagonal_(1)
-        pws = to_numpy(pws)
-        distance_matrix = np.where(pws, 1 - pws, 2)
-
-        # Compute the condensed distance matrix
-        condensed_distance_matrix = sch.distance.squareform(distance_matrix)
-
-        # Perform hierarchical clustering using the linkage method
-        Z = sch.linkage(condensed_distance_matrix, method=linkage)
-        # dendrogram = sch.dendrogram(Z)
-
-        tree = np.eye(len(imgs))
-        new_to_old_nodes = {i:i for i in range(len(imgs))}
-        for i, (a, b) in enumerate(Z[:,:2].astype(int)):
-            # given two nodes to be merged, we choose which one is the best representant
-            a = new_to_old_nodes[a]
-            b = new_to_old_nodes[b]
-            tree[a,b] = tree[b,a] = 1
-            best = a if pws[a].sum() > pws[b].sum() else b
-            new_to_old_nodes[len(imgs)+i] = best
-            pws[best] = np.maximum(pws[a], pws[b]) # update the node
-
-        pairwise_scores = torch.from_numpy(tree) # this output just gives 1s for connected edges and zeros for other, i.e. no scores or priority
-        mst = compute_min_spanning_tree(pairwise_scores)
-
-    else:
-        raise ValueError(f'bad {kinematic_mode=}')
+    # compute minimal spanning tree
+    mst = compute_min_spanning_tree(pairwise_scores)
 
     # remove all edges not in the spanning tree?
     # min_spanning_tree = {(imgs[i],imgs[j]) for i,j in mst[1]}
     # tmp_pairs = {(a,b):v for (a,b),v in tmp_pairs.items() if {(a,b),(b,a)} & min_spanning_tree}
+
+    # smartly combine all useful data
+    imsizes, pps, base_focals, core_depth, anchors, corres, corres2d, preds_21 = \
+        condense_data(imgs, tmp_pairs, canonical_views, preds_21, dtype)
 
     imgs, res_coarse, res_fine = sparse_scene_optimizer(
         imgs, subsample, imsizes, pps, base_focals, core_depth, anchors, corres, corres2d, preds_21, canonical_paths, mst,
@@ -195,8 +345,8 @@ def sparse_global_alignment(imgs, pairs_in, cache_path, model, subsample=8, desc
 
 def sparse_scene_optimizer(imgs, subsample, imsizes, pps, base_focals, core_depth, anchors, corres, corres2d,
                            preds_21, canonical_paths, mst, cache_path,
-                           lr1=0.07, niter1=300, loss1=gamma_loss(1.5),
-                           lr2=0.01, niter2=300, loss2=gamma_loss(0.5),
+                           lr1=0.2, niter1=500, loss1=gamma_loss(1.1),
+                           lr2=0.02, niter2=500, loss2=gamma_loss(0.4),
                            lossd=gamma_loss(1.1),
                            opt_pp=True, opt_depth=True,
                            schedule=cosine_schedule, depth_mode='add', exp_depth=False,
@@ -211,7 +361,7 @@ def sparse_scene_optimizer(imgs, subsample, imsizes, pps, base_focals, core_dept
     quats = [nn.Parameter(vec0001.clone()) for _ in range(len(imgs))]
     trans = [nn.Parameter(torch.zeros(3, device=device, dtype=dtype)) for _ in range(len(imgs))]
 
-    # intialize
+    # initialize
     ones = torch.ones((len(imgs), 1), device=device, dtype=dtype)
     median_depths = torch.ones(len(imgs), device=device, dtype=dtype)
     for img in imgs:
