@@ -380,12 +380,35 @@ def draw_picture(save_folder, pred_left, depth_left, img_left, img_right):
 
 def resize_resolution(pred, target):
     if not pred.shape == target.shape:
+    # enlarge
         o_h, o_w = target.shape[:2]
-        pred = cv2.resize(pred, (o_w, o_h))
+        pred = cv2.resize(pred, (o_w, o_h), interpolation=cv2.INTER_LANCZOS4)
+        # pred_resized = cv2.GaussianBlur(pred, (5, 5), sigmaX=1.0)
+    # reduce
+        # t_h, t_w = pred.shape
+        # target = cv2.resize(target, (t_w, t_h), interpolation=cv2.INTER_AREA)
     return pred
 
 
 # 记得用scale shift 来处理代码
+def scale_shift_invariant(pred, gt):
+    # pred: predicted depth map (H, W), gt: ground truth depth map (H, W)
+
+    # Step 1: Center the depth maps
+    mu_pred = np.mean(pred)  # Scalar
+    mu_gt = np.mean(gt)  # Scalar
+    pred_centered = pred - mu_pred
+    gt_centered = gt - mu_gt
+
+    # Step 2: Normalize scale
+    # Compute the RMS value of the centered depth maps
+    scale_pred = np.sqrt(np.mean(pred_centered ** 2))  # Scalar
+    scale_gt = np.sqrt(np.mean(gt_centered ** 2))  # Scalar
+    # Normalize, adding a small epsilon to avoid division by zero
+    pred_normalized = pred_centered / (scale_pred + 1e-6)
+    gt_normalized = gt_centered / (scale_gt + 1e-6)
+
+    return gt_normalized, pred_normalized
 
 
 def endoscope_evaluation(args):
@@ -431,6 +454,7 @@ def endoscope_evaluation(args):
         pred_left, pred_right = predict_depth(save_folder, left_img, right_img, device=args.device, model=model)
 
         pred_left = resize_resolution(pred_left, left_depth)
+        # left_depth = resize_resolution()
         # pred_right = resize_resolution(pred_right, right_depth)
 
 
@@ -441,10 +465,13 @@ def endoscope_evaluation(args):
         # for idx, (pred, gt) in enumerate(zip(pred_left, left_depth)):
         pred = pred_left
         gt = left_depth
-        pred = (pred - pred.min()) / (pred.max() - pred.min())
-        # pred = 1/(1e-6 + pred)
-        # gt = 1/(1e-6 + gt)
-        gt = (gt - gt.min()) / (gt.max() - gt.min())
+
+        gt, pred = scale_shift_invariant(pred, gt)
+
+        # pred = (pred - pred.min()) / (pred.max() - pred.min())
+        # # pred = 1/(1e-6 + pred)
+        # # gt = 1/(1e-6 + gt)
+        # gt = (gt - gt.min()) / (gt.max() - gt.min())
 
         draw_picture(save_folder, pred, gt, left_img, right_img)
         depth_metric = eval_depth_numpy(pred, gt, None)
