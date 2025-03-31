@@ -227,6 +227,8 @@ def load_data_path(img_path, data_name):
     r_img = cv2.imread(right_img)
 
     # l_depth = cv2.imread(left_depth, cv2.IMREAD_GRAYSCALE)
+    assert os.path.exists(left_depth)
+    assert os.path.exists(right_depth)
     l_depth = cv2.imread(left_depth, cv2.IMREAD_UNCHANGED) / 256.0
     r_depth = cv2.imread(right_depth, cv2.IMREAD_UNCHANGED) / 256.0
     # plt.subplot(121)
