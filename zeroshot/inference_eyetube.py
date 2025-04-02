@@ -55,9 +55,9 @@ def parse_args():
                         help="project location")
     parser.add_argument('--model-name', type=str, default='naver/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth')
     # where the endoscope is
-    parser.add_argument('--input-dir', type=str, default='/data/luxiaoxi/dataset/medical_depth/SERV-CT_preprocessed')
-    parser.add_argument('--data-name', type=str, help='scared, abs, servct', default='servct')
-    parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/medical_depth_output/mast3r_zeroshot')
+    parser.add_argument('--input-dir', type=str, default='/data/luxiaoxi/dataset/medical_depth/eyetube/anterior')
+    parser.add_argument('--input-data', type=str, help='cutting_tissues_twice or pulling_soft_tissues', default='Heads_Up_Scleral_Buckling_With_a_Chandelier_Light_3_D')
+    parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/medical_depth_output/eyetube_mast3r_zeroshot/anterior')
     parser.add_argument('--device', type=str, default='cuda')
     # parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/eyetube_phase4_results/anterior/23_Gauge_Plaque_Dissection_of_Anterior_Persistent_Fetal_Vasculature_in_a_2_week_old_Boy/dataset0/dust3r/')
     # parser.add_argument('--model-name', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalDust3R/naver/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth')
@@ -195,41 +195,42 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
     # ----------------find 2D-2D matches between the two images------------#
 
 
-def load_data_path(img_path, data_name):
+def load_data_path(img_path):
+    ##
     # img_path = img_path.replace("data_new", "data")
-    if data_name == "abs":
-        left_img = img_path
-        right_img = left_img.replace("imgL", "imgR")
-
-        left_depth = left_img.replace("img", "depth")
-        right_depth = right_img.replace("img", "depth")
-    elif data_name == "scared":
-        left_img = img_path
-        right_img =img_path.replace("Left_Image", "Right_Image")
-
-        left_depth = left_img.replace("Left_Image", "depthmap_left")
-        right_depth = right_img.replace("Right_Image", "depthmap_right")
-    elif data_name == "servct":
-        left_img = img_path
-        right_img = img_path.replace("left", "right")
-
-        left_depth = left_img.replace("left", "depthL")
-        right_depth = right_img.replace("right", "depthR")
-
-    # left_img = img_path
-    # right_img = img_path.replace('left', 'right')
+    # if data_name.split('_')[0] == "abs":
+    #     left_img = os.path.join(img_path, "imgL.png")
+    #     right_img = os.path.join(img_path, "imgR.png")
     #
-    # left_depth = left_img.replace("left", "gt_disparity")
-    # # right_depth = right_img.replace("img", "depth")
+    #     left_depth = left_img.replace("img", "depth")
+    #     right_depth = right_img.replace("img", "depth")
+    # elif data_name.split('_')[0] == "scared":
+    #     left_img = os.path.join(img_path, "Left_Image.png")
+    #     right_img = os.path.join(img_path, "Right_Image.png")
+    #
+    #     left_depth = left_img.replace("Left_Image", "depthmap_left")
+    #     right_depth = right_img.replace("Right_Image", "depthmap_right")
+    # elif data_name.split('_')[0] == "servct":
+    #
+    #     data_root = "/data_new/luxiaoxi/dataset/medical_depth/SERV-CT_preprocessed"
+    #     # data_root = "/data/luxiaoxi/dataset/medical_depth/SERV-CT_preprocessed"
+    #
+    #     left_img = os.path.join(data_root, "left", img_path)
+    #     right_img = os.path.join(data_root, "right", img_path)
+    #
+    #     left_depth = left_img.replace("left", "depthL")
+    #     right_depth = right_img.replace("right", "depthR")
+    # elif data_name.split('_')[0] == "fundus":
+    left_img = img_path
+    right_img = img_path.replace('left', 'right')
+
+    # right_depth = right_img.replace("img", "depth")
 
     l_img = cv2.imread(left_img)
     r_img = cv2.imread(right_img)
 
-    # l_depth = cv2.imread(left_depth, cv2.IMREAD_GRAYSCALE)
-    assert os.path.exists(left_depth)
-    assert os.path.exists(right_depth)
-    l_depth = cv2.imread(left_depth, cv2.IMREAD_UNCHANGED) / 256.0
-    r_depth = cv2.imread(right_depth, cv2.IMREAD_UNCHANGED) / 256.0
+    # l_depth = cv2.imread(left_depth, cv2.IMREAD_UNCHANGED) / 256.0
+    # r_depth = cv2.imread(right_depth, cv2.IMREAD_UNCHANGED) / 256.0
     # plt.subplot(121)
     # plt.imshow(left_)
     # plt.title('left depth')
@@ -241,7 +242,7 @@ def load_data_path(img_path, data_name):
     # plt.colorbar()
     # plt.savefig(os.path.join(save_folder, "left_and_right_rgbs.png"))
     # plt.close()
-    return left_img, l_depth, right_img, r_depth
+    return left_img, right_img
 
 
 # def draw_comparison(left_img, left_depth, right_img, right_depth, pred_left, pred_right)
@@ -335,49 +336,41 @@ def predict_depth(save_folder, left_img, right_img, device, model):
     return pred_left, pred_right
 
 
-def draw_picture(save_folder, pred_left, pred_right, depth_left, depth_right, img_left, img_right):
+def draw_picture(save_folder, pred_left, pred_right, img_left, img_right):
     # Load images (assuming these variables are defined)
     left_img = cv2.imread(img_left)
     right_img = cv2.imread(img_right)
 
     # Create a 3x2 subplot grid
-    plt.figure(figsize=(10, 15))  # Adjust figure size as needed
+    plt.figure(figsize=(10, 10))  # Adjust figure size as needed
 
     # Row 1: Original images
-    plt.subplot(321)  # 3 rows, 2 columns, position 1
+    plt.subplot(221)  # 3 rows, 2 columns, position 1
     plt.imshow(cv2.cvtColor(left_img, cv2.COLOR_BGR2RGB))  # Convert BGR to RGB
     plt.title('Left Image')
     plt.axis('off')  # Optional: hide axes
 
-    plt.subplot(322)  # 3 rows, 2 columns, position 2
+    plt.subplot(222)  # 3 rows, 2 columns, position 2
     plt.imshow(cv2.cvtColor(right_img, cv2.COLOR_BGR2RGB))  # Convert BGR to RGB
     plt.title('Right Image')
     plt.axis('off')
 
     # Row 2: Ground truth depth maps
-    plt.subplot(323)  # 3 rows, 2 columns, position 3
-    plt.imshow(depth_left, cmap='jet')
-    plt.title('GT Left')
-    plt.axis('off')
-
-    plt.subplot(324)  # 3 rows, 2 columns, position 4
-    plt.imshow(depth_right, cmap='jet')
-    plt.title('GT Right')
+    plt.subplot(223)  # 3 rows, 2 columns, position 3
+    plt.imshow(pred_left, cmap='jet')
+    plt.title('predicted Left')
     plt.axis('off')
 
     # Row 3: Predicted depth maps
-    plt.subplot(325)  # 3 rows, 2 columns, position 5
-    plt.imshow(pred_left, cmap='jet')
-    plt.title('Predicted Left')
-    plt.axis('off')
-
-    plt.subplot(326)  # 3 rows, 2 columns, position 6
+    plt.subplot(224)  # 3 rows, 2 columns, position 5
     plt.imshow(pred_right, cmap='jet')
     plt.title('Predicted Right')
     plt.axis('off')
 
+
     # Adjust layout and save
     plt.tight_layout()  # Prevents overlapping
+    plt.show()
     plt.savefig(os.path.join(save_folder, "comparison_figure.png"), dpi=300)  # Higher DPI for better quality
     plt.close()
     return
@@ -420,92 +413,64 @@ def endoscope_evaluation(args):
     device = args.device
 
     base_dir = args.base_dir
-    output_dir = os.path.join(args.output_dir, args.data_name)
-    os.makedirs(output_dir, exist_ok=True)
 
     # ckpt_dir = os.path.join(args.base_dir, 'checkpoints', args.data_name)
 
     # with open(os.path.join(ckpt_dir, "list_data.json"), "r") as f:
     #     folders = json.load(f)
 
-    metric_logger = misc.MetricLogger(delimiter="  ")
-    metric_logger.meters = defaultdict(lambda: misc.SmoothedValue(window_size=9 ** 9))
+    # folder_lists = ["folder_%d" % (i) for i in range(5)]
+    #
+    # metric_logger = misc.MetricLogger(delimiter="  ")
+    # metric_logger.meters = defaultdict(lambda: misc.SmoothedValue(window_size=9 ** 9))
 
     # for folder_idx, folder in enumerate(folder_lists):
-    header = 'folder: [{}]'.format("endonerf")
-    img_list = []
-    if args.data_name == "scared":
-        datasets = [f for f in os.listdir(args.input_dir) if not f.endswith('.txt')]
-        for dataset in datasets:
-            for keyframe in os.listdir(os.path.join(args.input_dir, dataset)):
-                img_list.append(os.path.join(args.input_dir, dataset, keyframe, "Left_Image.png"))
-    elif args.data_name == "abs":
-        for folder in os.listdir(args.input_dir):
-            for subfolder in os.listdir(os.path.join(args.input_dir, folder)):
-                img_list.append(os.path.join(args.input_dir, folder, subfolder, "imgL.png"))
-    elif args.data_name == "servct":
-        for img in os.listdir(os.path.join(args.input_dir, "left")):
-            img_list.append(os.path.join(args.input_dir, "left", img))
+    # header = 'folder: [{}]'.format("endonerf")
 
+    img_list = os.listdir(os.path.join(args.input_dir, args.input_data, 'left'))
+    img_list = [os.path.join(args.input_dir, args.input_data, 'left', img) for img in img_list if img.endswith('.png') or img.endswith('.jpg')]
 
-    model_name = os.path.join(base_dir, args.model_name)
+    model_name = os.path.join(args.base_dir, args.model_name)
     assert os.path.exists(model_name), '{} does not exist'.format(model_name)
     # you can put the path to a local checkpoint in model_name if needed
     model = AsymmetricMASt3R.from_pretrained(model_name).to(device)
 
-    for img_path in metric_logger.log_every(img_list, print_freq=1, header=header):
-        if args.data_name.split('_')[0] == "servct":
-            save_folder = os.path.join(output_dir, img_path.split('/')[-1].split('.')[0])
-        elif args.data_name.split('_')[0] == "fundus":
-            save_folder = os.path.join(output_dir, img_path.split('/')[-4], img_path.split('/')[-3],
-                                       img_path.split('/')[-1].split('.')[0])
-        else:
-            save_folder = os.path.join(output_dir, img_path.split('/')[-2], img_path.split('/')[-1])
-
+    for img_path in tqdm(img_list):
+        # if args.data_name.split('_')[0] == "servct":
+        #     save_folder = os.path.join(output_dir, img_path.split('.')[0])
+        # elif args.data_name.split('_')[0] == "fundus":
+        #     save_folder = os.path.join(output_dir, img_path.split('/')[-4], img_path.split('/')[-3],
+        #                                img_path.split('/')[-1].split('.')[0])
+        # else:
+        #     save_folder = os.path.join(output_dir, img_path.split('/')[-2], img_path.split('/')[-1])
+        img_name = img_path.split('/')[-1].split('.')[0]
+        save_folder = os.path.join(args.output_dir, args.input_data, img_name)
         os.makedirs(save_folder, exist_ok=True)
         # assert os.path.exists(img_path)
-        left_img, left_depth, right_img,right_depth = load_data_path(img_path, args.data_name)
+        left_img, right_img = load_data_path(img_path)
 
         pred_left, pred_right = predict_depth(save_folder, left_img, right_img, device=args.device, model=model)
 
-        pred_left = resize_resolution(pred_left, left_depth)
-        pred_right = resize_resolution(pred_right, right_depth)
+        pred_left = resize_resolution(pred_left, left_img)
+        pred_right = resize_resolution(pred_right, right_img)
         # left_depth = resize_resolution()
         # pred_right = resize_resolution(pred_right, right_depth)
-        left_depth, pred_left = scale_shift_invariant(pred_left, left_depth)
-        right_depth, pred_right = scale_shift_invariant(pred_right, right_depth)
 
-        draw_picture(save_folder, pred_left, pred_right, left_depth, right_depth, left_img, right_img)
 
-        # ---------------------------evaluation----------------------------#
-        # ---------------------------d1, d2, d3----------------------------#
-        total_metric = dict()
-        for idx, (pred, gt) in enumerate(zip([pred_left, pred_right], [left_depth, right_depth])):
-            pred = (pred - pred.min()) / (pred.max() - pred.min())
-            # pred = 1/(1e-6 + pred)
-            # gt = 1/(1e-6 + gt)
-            gt = (gt - gt.min()) / (gt.max() - gt.min())
 
-            depth_metric = eval_depth_numpy(pred, gt, None)
 
-            if idx == 0:
-                for key, values in depth_metric.items():
-                    total_metric[key] = [depth_metric[key]]
 
-            for key, values in depth_metric.items():
-                total_metric[key].append(depth_metric[key])
+        # gt, pred = scale_shift_invariant(pred, gt)
 
-        mean_metric = dict()
-        for key, values in total_metric.items():
-            mean_metric[key] = np.mean(np.array(total_metric[key]))
+        # pred = (pred - pred.min()) / (pred.max() - pred.min())
+        # # pred = 1/(1e-6 + pred)
+        # # gt = 1/(1e-6 + gt)
+        # gt = (gt - gt.min()) / (gt.max() - gt.min())
 
-        metric_logger.update(**mean_metric)
+        draw_picture(save_folder, pred_left, pred_right, left_img, right_img)
+        # depth_metric = eval_depth_numpy(pred, gt, None)
 
-        txt_dir = output_dir
-        with open(os.path.join(txt_dir, "eval_results.txt"), "a") as f:
-            f.write("img_path: %s \n" % img_path)
-            f.write(str(metric_logger))
-            f.write("\n \n")
+
 
 if __name__ == "__main__":
     args = parse_args()
