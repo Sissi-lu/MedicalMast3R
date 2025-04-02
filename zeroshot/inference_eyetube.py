@@ -242,7 +242,7 @@ def load_data_path(img_path):
     # plt.colorbar()
     # plt.savefig(os.path.join(save_folder, "left_and_right_rgbs.png"))
     # plt.close()
-    return left_img, right_img
+    return left_img, right_img, l_img, r_img
 
 
 # def draw_comparison(left_img, left_depth, right_img, right_depth, pred_left, pred_right)
@@ -447,12 +447,13 @@ def endoscope_evaluation(args):
         save_folder = os.path.join(args.output_dir, args.input_data, img_name)
         os.makedirs(save_folder, exist_ok=True)
         # assert os.path.exists(img_path)
-        left_img, right_img = load_data_path(img_path)
+        left_img, right_img, l_img, r_img = load_data_path(img_path)
 
         pred_left, pred_right = predict_depth(save_folder, left_img, right_img, device=args.device, model=model)
 
-        pred_left = resize_resolution(pred_left, left_img)
-        pred_right = resize_resolution(pred_right, right_img)
+
+        pred_left = resize_resolution(pred_left, l_img)
+        pred_right = resize_resolution(pred_right, r_img)
         # left_depth = resize_resolution()
         # pred_right = resize_resolution(pred_right, right_depth)
 
