@@ -273,7 +273,7 @@ def predict_depth(save_folder, left_img, right_img, device, model):
     niter1 = 500  # num_iterations
     lr2 = 0.014  # Fine LR:0.005-0.05
     niter2 = 500  # num_iterations
-    min_conf_thr = 1.5  # adjust the confidence threshold0.0-10
+    min_conf_thr = 0.2  # adjust the confidence threshold0.0-10
     as_pointcloud = True
     mask_sky = False
     clean_depth = True
@@ -370,7 +370,7 @@ def draw_picture(save_folder, pred_left, pred_right, img_left, img_right):
 
     # Adjust layout and save
     plt.tight_layout()  # Prevents overlapping
-    plt.show()
+    # plt.show()
     plt.savefig(os.path.join(save_folder, "comparison_figure.png"), dpi=300)  # Higher DPI for better quality
     plt.close()
     return
