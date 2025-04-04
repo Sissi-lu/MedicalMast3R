@@ -265,7 +265,7 @@ def predict_depth(save_folder, left_img, right_img, device, model):
     niter1 = 500  # num_iterations
     lr2 = 0.014  # Fine LR:0.005-0.05
     niter2 = 500  # num_iterations
-    min_conf_thr = 0.5  # adjust the confidence threshold0.0-10
+    min_conf_thr = 0.1  # adjust the confidence threshold0.0-10
     as_pointcloud = True
     mask_sky = False
     clean_depth = True
