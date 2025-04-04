@@ -1,4 +1,4 @@
 [submodule "dust3r"]
 	path = dust3r
-	url = https://github.com/naver/dust3r
+	url = https://github.com/Sissi-lu/dust3r_for_mast.git
 	branch = cvpr
