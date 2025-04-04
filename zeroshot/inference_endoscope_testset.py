@@ -38,15 +38,8 @@ from mast3r.cloud_opt.sparse_ga import sparse_global_alignment
 from mast3r.cloud_opt.tsdf_optimizer import TSDFPostProcess
 import torch
 import mast3r.utils.path_to_dust3r  # noqa
-# torch.cuda.set_device(4)  # Force GPU 4
-# device = torch.device("cuda:4")
-# print("Forced device:", torch.cuda.current_device())
-# print("Device name:", torch.cuda.get_device_name(torch.cuda.current_device()))
 
-# print("CUDA available:", torch.cuda.is_available())
-# print("Device count:", torch.cuda.device_count())
-# print("Current device:", torch.cuda.current_device())
-# print("Device name:", torch.cuda.get_device_name(torch.cuda.current_device()))
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -55,8 +48,8 @@ def parse_args():
                         help="project location")
     parser.add_argument('--model-name', type=str, default='naver/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth')
     # where the endoscope is
-    parser.add_argument('--input-dir', type=str, default='/data/luxiaoxi/dataset/medical_depth/SERV-CT_preprocessed')
-    parser.add_argument('--data-name', type=str, help='scared, abs, servct', default='servct')
+    parser.add_argument('--input-dir', type=str, default='/data/luxiaoxi/dataset/medical_depth/EndoAbs_preprocessed_nearest')
+    parser.add_argument('--data-name', type=str, help='scared, abs, servct', default='abs')
     parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/medical_depth_output/mast3r_zeroshot')
     parser.add_argument('--device', type=str, default='cuda')
     # parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/eyetube_phase4_results/anterior/23_Gauge_Plaque_Dissection_of_Anterior_Persistent_Fetal_Vasculature_in_a_2_week_old_Boy/dataset0/dust3r/')
@@ -196,16 +189,16 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
 
 
 def load_data_path(img_path, data_name):
-    # img_path = img_path.replace("data_new", "data")
+    img_path = img_path.replace("data_new", "data")
     if data_name == "abs":
-        left_img = img_path
+        left_img = os.path.join(img_path, "imgL.png")
         right_img = left_img.replace("imgL", "imgR")
 
         left_depth = left_img.replace("img", "depth")
         right_depth = right_img.replace("img", "depth")
     elif data_name == "scared":
-        left_img = img_path
-        right_img =img_path.replace("Left_Image", "Right_Image")
+        left_img = os.path.join(img_path, "Left_Image.png")
+        right_img = os.path.join(img_path, "Right_Image.png")
 
         left_depth = left_img.replace("Left_Image", "depthmap_left")
         right_depth = right_img.replace("Right_Image", "depthmap_right")
@@ -431,26 +424,35 @@ def endoscope_evaluation(args):
     metric_logger = misc.MetricLogger(delimiter="  ")
     metric_logger.meters = defaultdict(lambda: misc.SmoothedValue(window_size=9 ** 9))
 
-    # for folder_idx, folder in enumerate(folder_lists):
+
+
     # ------------all data in endoscope ---------------#
-    header = 'folder: [{}]'.format("endonerf")
-    img_list = []
-    if args.data_name == "scared":
-        datasets = [f for f in os.listdir(args.input_dir) if not f.endswith('.txt')]
-        for dataset in datasets:
-            for keyframe in os.listdir(os.path.join(args.input_dir, dataset)):
-                img_list.append(os.path.join(args.input_dir, dataset, keyframe, "Left_Image.png"))
-    elif args.data_name == "abs":
-        for folder in os.listdir(args.input_dir):
-            for subfolder in os.listdir(os.path.join(args.input_dir, folder)):
-                img_list.append(os.path.join(args.input_dir, folder, subfolder, "imgL.png"))
-    elif args.data_name == "servct":
-        for img in os.listdir(os.path.join(args.input_dir, "left")):
-            img_list.append(os.path.join(args.input_dir, "left", img))
+    header = 'folder: [{}]'.format(args.data_name)
+    # img_list = []
+    # if args.data_name == "scared":
+    #     datasets = [f for f in os.listdir(args.input_dir) if not f.endswith('.txt')]
+    #     for dataset in datasets:
+    #         for keyframe in os.listdir(os.path.join(args.input_dir, dataset)):
+    #             img_list.append(os.path.join(args.input_dir, dataset, keyframe, "Left_Image.png"))
+    # elif args.data_name == "abs":
+    #     for folder in os.listdir(args.input_dir):
+    #         for subfolder in os.listdir(os.path.join(args.input_dir, folder)):
+    #             img_list.append(os.path.join(args.input_dir, folder, subfolder, "imgL.png"))
+    # elif args.data_name == "servct":
+    #     for img in os.listdir(os.path.join(args.input_dir, "left")):
+    #         img_list.append(os.path.join(args.input_dir, "left", img))
 
     #-------------------for just one test set------------------#
+    assert os.path.exists(os.path.join(args.input_dir, "list_data.json")), "the train and test splits are missing"
 
+    with open(os.path.join(args.input_dir, "list_data.json"), "r") as f:
+        folds = json.load(f)
 
+    # Create dataset instances for train and validation
+    fold_idx = 3
+    img_list = folds[fold_idx][1]
+    if args.data_name == "servct":
+        img_list = [os.path.join(args.input_dir, "left", f) for f in img_list]
 
 
     model_name = os.path.join(base_dir, args.model_name)
@@ -506,6 +508,7 @@ def endoscope_evaluation(args):
 
         metric_logger.update(**mean_metric)
 
+        # txt_dir = os.path.join(output_dir, args.data_name)
         txt_dir = output_dir
         with open(os.path.join(txt_dir, "eval_results.txt"), "a") as f:
             f.write("img_path: %s \n" % img_path)
