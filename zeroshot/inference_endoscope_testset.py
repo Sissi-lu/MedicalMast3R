@@ -38,8 +38,7 @@ from mast3r.cloud_opt.sparse_ga import sparse_global_alignment
 from mast3r.cloud_opt.tsdf_optimizer import TSDFPostProcess
 import torch
 import mast3r.utils.path_to_dust3r  # noqa
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -48,8 +47,8 @@ def parse_args():
                         help="project location")
     parser.add_argument('--model-name', type=str, default='naver/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth')
     # where the endoscope is
-    parser.add_argument('--input-dir', type=str, default='/data/luxiaoxi/dataset/medical_depth/EndoAbs_preprocessed_nearest')
-    parser.add_argument('--data-name', type=str, help='scared, abs, servct', default='abs')
+    parser.add_argument('--input-dir', type=str, default='/data/luxiaoxi/dataset/medical_depth/SERV-CT_preprocessed')
+    parser.add_argument('--data-name', type=str, help='scared, abs, servct', default='servct')
     parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/medical_depth_output/mast3r_zeroshot')
     parser.add_argument('--device', type=str, default='cuda')
     # parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/eyetube_phase4_results/anterior/23_Gauge_Plaque_Dissection_of_Anterior_Persistent_Fetal_Vasculature_in_a_2_week_old_Boy/dataset0/dust3r/')

@@ -731,7 +731,7 @@ def forward_mast3r(pairs, model, cache_path, desc_conf='desc_conf',
             if model is None:
                 continue
             res = symmetric_inference(model, img1, img2, device=device)
-            print(res)
+            # print(res)
             X11, X21, X22, X12 = [r['pts3d'][0] for r in res]
             C11, C21, C22, C12 = [r['conf'][0] for r in res]
             descs = [r['desc'][0] for r in res]
