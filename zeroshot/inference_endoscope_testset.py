@@ -2,6 +2,7 @@
 import argparse
 import sys
 import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../dust3r')))
 # os.environ['CUDA_VISIBLE_DEVICES'] = '1'
@@ -38,7 +39,7 @@ from mast3r.cloud_opt.sparse_ga import sparse_global_alignment
 from mast3r.cloud_opt.tsdf_optimizer import TSDFPostProcess
 import torch
 import mast3r.utils.path_to_dust3r  # noqa
-# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -65,7 +66,7 @@ def online_showing(scene):
     cams2world = scene.get_im_poses().cpu()
     # 3D pointcloud from depthmap, poses and intrinsics
     pts3d = to_numpy(scene.get_pts3d())
-    min_conf_thr = 0.5
+    min_conf_thr = 0.001
     scene.min_conf_thr = float(scene.conf_trf(torch.tensor(min_conf_thr)))
     valid_mask = to_numpy(scene.get_masks())
     cmap = plt.get_cmap('viridis')
@@ -188,7 +189,7 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
 
 
 def load_data_path(img_path, data_name):
-    # img_path = img_path.replace("data_new", "data")
+    img_path = img_path.replace("data_new", "data")
     if data_name == "abs":
         left_img = os.path.join(img_path, "imgL.png")
         right_img = left_img.replace("imgL", "imgR")

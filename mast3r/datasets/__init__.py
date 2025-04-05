@@ -12,6 +12,9 @@ from dust3r.datasets.scannetpp import ScanNetpp as DUSt3R_ScanNetpp  # noqa
 from dust3r.datasets.staticthings3d import StaticThings3D as DUSt3R_StaticThings3D  # noqa
 from dust3r.datasets.waymo import Waymo as DUSt3R_Waymo  # noqa
 from dust3r.datasets.wildrgbd import WildRGBD as DUSt3R_WildRGBD  # noqa
+from dust3r.datasets.scared_keyframe import ScaredKey as DUSt3R_ScaredKey
+from dust3r.datasets.servct import Servct as DUSt3R_Servct
+from dust3r.datasets.absdataset import Abs as DUSt3R_AbsDataset
 
 
 class ARKitScenes(DUSt3R_ARKitScenes, MASt3RBaseStereoViewDataset):
@@ -59,4 +62,19 @@ class Waymo(DUSt3R_Waymo, MASt3RBaseStereoViewDataset):
 class WildRGBD(DUSt3R_WildRGBD, MASt3RBaseStereoViewDataset):
     def __init__(self, mask_bg=True, *args, ROOT, **kwargs):
         super().__init__(mask_bg, *args, ROOT=ROOT, **kwargs)
+        self.is_metric_scale = True
+
+class ScaredKey(DUSt3R_ScaredKey, MASt3RBaseStereoViewDataset):
+    def __init__(self, mask_bg=True, *args, ROOT, running_list, **kwargs):
+        super().__init__(mask_bg, *args, ROOT=ROOT, running_list=running_list, **kwargs)
+        self.is_metric_scale = True
+
+class Abs(DUSt3R_AbsDataset, MASt3RBaseStereoViewDataset):
+    def __init__(self, mask_bg=True, *args, ROOT, running_list, **kwargs):
+        super().__init__(mask_bg, *args, ROOT=ROOT, running_list=running_list, **kwargs)
+        self.is_metric_scale = True
+
+class Servct(DUSt3R_Servct, MASt3RBaseStereoViewDataset):
+    def __init__(self, mask_bg=True, *args, ROOT, running_list, **kwargs):
+        super().__init__(mask_bg, *args, ROOT=ROOT, running_list=running_list, **kwargs)
         self.is_metric_scale = True
