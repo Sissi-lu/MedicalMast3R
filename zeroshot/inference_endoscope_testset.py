@@ -49,7 +49,7 @@ def parse_args():
     # where the endoscope is
     parser.add_argument('--input-dir', type=str, default='/data/luxiaoxi/dataset/medical_depth/SERV-CT_preprocessed')
     parser.add_argument('--data-name', type=str, help='scared, abs, servct', default='servct')
-    parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/medical_depth_output/mast3r_zeroshot')
+    parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/medical_depth_output/mast3r_finetune')
     parser.add_argument('--device', type=str, default='cuda')
     # parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/eyetube_phase4_results/anterior/23_Gauge_Plaque_Dissection_of_Anterior_Persistent_Fetal_Vasculature_in_a_2_week_old_Boy/dataset0/dust3r/')
     # parser.add_argument('--model-name', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalDust3R/naver/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth')
@@ -188,7 +188,7 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
 
 
 def load_data_path(img_path, data_name):
-    # img_path = img_path.replace("data_new", "data")
+    img_path = img_path.replace("data_new", "data")
     if data_name == "abs":
         left_img = os.path.join(img_path, "imgL.png")
         right_img = left_img.replace("imgL", "imgR")

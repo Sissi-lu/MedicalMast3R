@@ -730,6 +730,7 @@ def forward_mast3r(pairs, model, cache_path, desc_conf='desc_conf',
         if not all(os.path.isfile(p) for p in (path1, path2, path_corres)):
             if model is None:
                 continue
+
             res = symmetric_inference(model, img1, img2, device=device)
             # print(res)
             X11, X21, X22, X12 = [r['pts3d'][0] for r in res]
@@ -748,6 +749,9 @@ def forward_mast3r(pairs, model, cache_path, desc_conf='desc_conf',
             matching_score = (float(conf_score), float(corres[2].sum()), len(corres[2]))
             if cache_path is not None:
                 torch.save((matching_score, corres), mkdir_for(path_corres))
+            # except:
+            #     print("res not desc")
+
 
         res_paths[img1['instance'], img2['instance']] = (path1, path2), path_corres
 

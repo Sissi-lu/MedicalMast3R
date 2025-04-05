@@ -33,8 +33,8 @@ dust3r.datasets.WildRGBD = WildRGBD
 from dust3r.training import get_args_parser as dust3r_get_args_parser  # noqa
 from dust3r.finetuning import finetune  # noqa
 
-# import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def get_args_parser():
     parser = dust3r_get_args_parser()
