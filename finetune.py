@@ -5,7 +5,7 @@
 # --------------------------------------------------------
 # training executable for MASt3R
 # --------------------------------------------------------
-from mast3r.model import AsymmetricMASt3R
+rom mast3r.model import AsymmetricMASt3R
 from mast3r.losses import ConfMatchingLoss, MatchingLoss, APLoss, Regr3D, InfoNCE, Regr3D_ScaleShiftInv
 from mast3r.datasets import ARKitScenes, BlendedMVS, Co3d, MegaDepth, ScanNetpp, StaticThings3D, Waymo, WildRGBD
 
@@ -31,6 +31,7 @@ dust3r.datasets.Waymo = Waymo
 dust3r.datasets.WildRGBD = WildRGBD
 
 from dust3r.training import get_args_parser as dust3r_get_args_parser  # noqa
+from dust3r.training import train  # noqa
 from dust3r.finetuning import finetune  # noqa
 
 # import os
