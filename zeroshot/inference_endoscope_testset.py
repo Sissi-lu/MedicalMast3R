@@ -188,7 +188,7 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
 
 
 def load_data_path(img_path, data_name):
-    img_path = img_path.replace("data_new", "data")
+    # img_path = img_path.replace("data_new", "data")
     if data_name == "abs":
         left_img = os.path.join(img_path, "imgL.png")
         right_img = left_img.replace("imgL", "imgR")
