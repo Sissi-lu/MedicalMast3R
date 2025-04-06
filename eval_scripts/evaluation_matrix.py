@@ -36,7 +36,7 @@ def eval_depth_numpy(pred, target, msk):
 
     # Differences
     diff = pred - target
-    diff_log = np.log(pred) - np.log(target)
+    diff_log = np.log(pred + 1e-6) - np.log(target + 1e-6)
 
     # Metrics
     abs_rel = np.mean(np.abs(diff) / (target + 1e-6))
@@ -45,7 +45,7 @@ def eval_depth_numpy(pred, target, msk):
     rmse = np.sqrt(np.mean(np.power(diff, 2)))
     rmse_log = np.sqrt(np.mean(np.power(diff_log, 2)))
 
-    log10 = np.mean(np.abs(np.log10(pred) - np.log10(target)))
+    log10 = np.mean(np.abs(np.log10(pred + 1e-6) - np.log10(target + 1e-6)))
     silog = np.sqrt(np.mean(np.power(diff_log, 2)) - 0.5 * np.power(np.mean(diff_log), 2))
 
 
