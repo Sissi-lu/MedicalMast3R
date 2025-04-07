@@ -466,7 +466,9 @@ def endoscope_evaluation(args):
         pred = pred_left
         gt = left_depth
 
-        gt, pred = scale_shift_invariant(pred, gt)
+
+        ##-------------------overlook_shift_and_scared_invariant--------------------#
+        # gt, pred = scale_shift_invariant(pred, gt)
 
         # pred = (pred - pred.min()) / (pred.max() - pred.min())
         # # pred = 1/(1e-6 + pred)
