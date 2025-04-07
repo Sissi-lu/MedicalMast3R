@@ -230,6 +230,7 @@ def load_data_path(img_path):
     l_img = cv2.imread(left_img)
     r_img = cv2.imread(right_img)
 
+    # l_depth_unchanged = cv2.imread(left_depth, cv2.IMREAD_UNCHANGED)
     l_depth = cv2.imread(left_depth, cv2.IMREAD_GRAYSCALE)
     # l_depth = cv2.imread(left_depth, cv2.IMREAD_UNCHANGED) / 256.0
     # r_depth = cv2.imread(right_depth, cv2.IMREAD_UNCHANGED) / 256.0
@@ -407,6 +408,8 @@ def scale_shift_invariant(pred, gt):
     # Normalize, adding a small epsilon to avoid division by zero
     pred_normalized = pred_centered / (scale_pred + 1e-6)
     gt_normalized = gt_centered / (scale_gt + 1e-6)
+    # pred_shifted = pred_normalized + np.abs(np.min(pred_normalized))
+    # gt_shifted = gt_normalized + np.abs(np.min(gt_normalized))
 
     return gt_normalized, pred_normalized
 
@@ -468,12 +471,12 @@ def endoscope_evaluation(args):
 
 
         ##-------------------overlook_shift_and_scared_invariant--------------------#
-        # gt, pred = scale_shift_invariant(pred, gt)
+        gt, pred = scale_shift_invariant(pred, gt)
 
-        # pred = (pred - pred.min()) / (pred.max() - pred.min())
+        pred = (pred - pred.min()) / (pred.max() - pred.min())
         # # pred = 1/(1e-6 + pred)
         # # gt = 1/(1e-6 + gt)
-        # gt = (gt - gt.min()) / (gt.max() - gt.min())
+        gt = (gt - gt.min()) / (gt.max() - gt.min())
 
         draw_picture(save_folder, pred, gt, left_img, right_img)
         depth_metric = eval_depth_numpy(pred, gt, None)
