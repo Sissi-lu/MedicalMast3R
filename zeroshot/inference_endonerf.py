@@ -482,7 +482,8 @@ def endoscope_evaluation(args):
 
         metric_logger.update(**total_metric)
 
-        txt_dir = os.path.abspath(os.path.join(save_folder, "../.."))
+
+        txt_dir = os.path.abspath(os.path.join(save_folder, ".."))
         with open(os.path.join(txt_dir, "eval_results.txt"), "a") as f:
             f.write("img_path: %s \n" % img_path)
             f.write(str(metric_logger))
