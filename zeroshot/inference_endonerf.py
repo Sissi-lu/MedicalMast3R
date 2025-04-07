@@ -73,7 +73,7 @@ def online_showing(scene):
     cams2world = scene.get_im_poses().cpu()
     # 3D pointcloud from depthmap, poses and intrinsics
     pts3d = to_numpy(scene.get_pts3d())
-    min_conf_thr = 0.001
+    min_conf_thr = 0.0001
     scene.min_conf_thr = float(scene.conf_trf(torch.tensor(min_conf_thr)))
     valid_mask = to_numpy(scene.get_masks())
     cmap = plt.get_cmap('viridis')
