@@ -413,6 +413,8 @@ def scale_shift_invariant(pred, gt):
 
     return gt_normalized, pred_normalized
 
+### GT -> pred 中值对齐
+
 
 def endoscope_evaluation(args):
     device = args.device
