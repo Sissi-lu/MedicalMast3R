@@ -30,6 +30,7 @@ def eval_depth_numpy(pred, target, msk):
     # Calculate threshold metrics
     thresh = np.maximum((target / pred), (pred / target))
 
+    d05 = np.sum(thresh < 1.25**0.5) / len(thresh)
     d1 = np.sum(thresh < 1.25) / len(thresh)
     d2 = np.sum(thresh < 1.25 ** 2) / len(thresh)
     d3 = np.sum(thresh < 1.25 ** 3) / len(thresh)
@@ -52,6 +53,7 @@ def eval_depth_numpy(pred, target, msk):
     return {
         'robust_mvd_absrel': float(mvd_absrel),
         'inliers103': float(mvd_inliers103),
+        'd05': float(d05),
         'd1': float(d1),  # Convert to native Python float
         'd2': float(d2),
         'd3': float(d3),
