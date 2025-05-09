@@ -249,7 +249,7 @@ def load_data_path(img_path):
     # plt.imshow(left_)
     # plt.title('left depth')
     # plt.colorbar()
-    #
+    #0
     # plt.subplot(122)
     # plt.imshow(right_)
     # plt.title('right depth')
