@@ -1,4 +1,4 @@
-Export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=0
 
 python ./zeroshot/inference_endoscope_testset.py \
 --base-dir /data_new/luxiaoxi/code_proj/MedicalMast3R \
