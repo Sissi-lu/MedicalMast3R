@@ -51,9 +51,9 @@ import mast3r.utils.path_to_dust3r  # noqa
 def parse_args():
     parser = argparse.ArgumentParser()
     # where the checkpoints is
-    parser.add_argument('--base-dir', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/',
+    parser.add_argument('--base-dir', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalMast3R/',
                         help="project location")
-    parser.add_argument('--model-name', type=str, default='checkpoints/together_unfreeze_head_decoder_0510/checkpoint-best.pth')
+    parser.add_argument('--model-name', type=str, default='checkpoints/fundusdong_bs2_0509/checkpoint-best.pth')
     # where the endoscope is
     parser.add_argument('--input-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth/final_version_processed')
     # parser.add_argument('--input-data', type=str, help='cutting_tissues_twice or pulling_soft_tissues', default='cutting_tissues_twice')
