@@ -7,7 +7,7 @@
 # --------------------------------------------------------
 from mast3r.model import AsymmetricMASt3R
 from mast3r.losses import ConfMatchingLoss, MatchingLoss, APLoss, Regr3D, InfoNCE, Regr3D_ScaleShiftInv
-from mast3r.datasets import ARKitScenes, BlendedMVS, Co3d, MegaDepth, ScanNetpp, StaticThings3D, Waymo, WildRGBD, ScaredKey, Abs, Servct
+from mast3r.datasets import ARKitScenes, BlendedMVS, Co3d, MegaDepth, ScanNetpp, StaticThings3D, Waymo, WildRGBD, ScaredKey, Abs, Servct, SCARED
 
 import mast3r.utils.path_to_dust3r  # noqa
 # add mast3r classes to dust3r imports
@@ -19,6 +19,7 @@ dust3r.finetuning.MatchingLoss = MatchingLoss
 dust3r.finetuning.ConfMatchingLoss = ConfMatchingLoss
 dust3r.finetuning.InfoNCE = InfoNCE
 dust3r.finetuning.APLoss = APLoss
+
 
 import dust3r.datasets
 dust3r.datasets.ARKitScenes = ARKitScenes
@@ -32,6 +33,7 @@ dust3r.datasets.WildRGBD = WildRGBD
 dust3r.datasets.ScaredKey = ScaredKey
 dust3r.datasets.Abs = Abs
 dust3r.datasets.Servct = Servct
+dust3r.datasets.SCARED = SCARED
 
 
 
