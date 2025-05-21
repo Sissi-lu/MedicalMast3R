@@ -16,7 +16,7 @@ from dust3r.viz import SceneViz, auto_cam_size
 from mast3r.cloud_opt.sparse_ga import sparse_global_alignment
 from collections import defaultdict
 from dust3r.cloud_opt import global_aligner, GlobalAlignerMode
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 
 import cv2
