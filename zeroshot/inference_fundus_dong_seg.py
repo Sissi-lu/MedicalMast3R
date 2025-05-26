@@ -53,11 +53,11 @@ def parse_args():
     # where the checkpoints is
     parser.add_argument('--base-dir', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalMast3R/',
                         help="project location")
-    parser.add_argument('--model-name', type=str, default='checkpoints/fundusdong_bs2_0509/checkpoint-best.pth')
+    parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/fundusdong_bs2_0511_mast/checkpoint-best.pth')
     # where the endoscope is
     parser.add_argument('--input-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth/final_version_processed')
     # parser.add_argument('--input-data', type=str, help='cutting_tissues_twice or pulling_soft_tissues', default='cutting_tissues_twice')
-    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/Mast3R_510_seg')
+    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MASt3R_new')
     parser.add_argument('--device', type=str, default='cuda')
     # parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/eyetube_phase4_results/anterior/23_Gauge_Plaque_Dissection_of_Anterior_Persistent_Fetal_Vasculature_in_a_2_week_old_Boy/dataset0/dust3r/')
     # parser.add_argument('--model-name', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalDust3R/naver/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth')
@@ -180,6 +180,7 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
         for i in range(n_viz):
             (x0, y0), (x1, y1) = viz_matches_im0[i].T, viz_matches_im1[i].T
             plt.plot([x0, x1 + W0], [y0, y1], '-+', color=cmap(i / (n_viz - 1)), scalex=False, scaley=False)
+        # plt.shows()
         plt.savefig(os.path.join(save_folder,
                                  "viz_matches_have_%02d_matches.png" % (num_matches)))
         plt.close()
@@ -468,6 +469,7 @@ def endoscope_evaluation(args):
     # you can put the path to a local checkpoint in model_name if needed
     model = AsymmetricMASt3R.from_pretrained(model_name).to(device)
 
+    ratios = []
     for img_path in metric_logger.log_every(img_list, print_freq=1, header=header):
         # if args.data_name.split('_')[0] == "servct":
         #     save_folder = os.path.join(output_dir, img_path.split('.')[0])
@@ -502,12 +504,15 @@ def endoscope_evaluation(args):
 
 
         ##-------------------overlook_shift_and_scared_invariant--------------------#
-        gt, pred = scale_shift_invariant(pred, gt)
+        ratio = np.median(gt) / np.median(pred)
 
-        pred = (pred - pred.min()) / (pred.max() - pred.min())
-        # # # pred = 1/(1e-6 + pred)
-        # # # gt = 1/(1e-6 + gt)
-        gt = (gt - gt.min()) / (gt.max() - gt.min())
+        pred *= ratio
+        # gt, pred = scale_shift_invariant(pred, gt)
+        #
+        # pred = (pred - pred.min()) / (pred.max() - pred.min())
+        # # # # pred = 1/(1e-6 + pred)
+        # # # # gt = 1/(1e-6 + gt)
+        # gt = (gt - gt.min()) / (gt.max() - gt.min())
 
         # draw_picture(save_folder, pred, gt, left_img, right_img)
         # depth_metric = eval_depth_numpy(pred, gt, None)
