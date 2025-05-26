@@ -13,6 +13,7 @@ import PIL.Image
 import tempfile
 import shutil
 import time
+import matplotlib.cm as cm
 from pathlib import Path
 from scipy.spatial.transform import Rotation
 
@@ -20,7 +21,7 @@ from mast3r.model import AsymmetricMASt3R
 from mast3r.colmap.mapping import kapture_import_image_folder_or_list, run_mast3r_matching, glomap_run_mapper
 from mast3r.image_pairs import make_pairs
 from dust3r.utils.image import load_images
-from dust3r.viz import depth_to_rgb
+# from dust3r.viz import depth_to_rgb
 from kapture.converter.colmap.database_extra import kapture_to_colmap
 
 
@@ -52,39 +53,124 @@ def save_poses(world_to_cam, image_names, output_dir):
             t = pose_w2c[:3, 3]  # Translation
             R = pose_w2c[:3, :3]  # Rotation matrix
             quat = Rotation.from_matrix(R).as_quat()  # Quaternion (x, y, z, w)
-            f.write(f"{img_name} {t[0]} {t[1]} {t[2]} {quat[0]} {quat[1]} {quat[2]} {quat[3]}\n")
-    np.save(os.path.join(output_dir, 'poses.npy'), world_to_cam)
+
+
+
+
+
+
     print(f"Poses saved to {pose_file} and poses.npy")
 
-def save_depth_maps(model, imgs, pairs, device, output_dir, metrics):
-    """Generate and save depth maps for each image using MASt3R predictions."""
+
+def save_depth_maps(image_names, world_to_cam, intrinsics, points3d, images, output_dir, metrics, image_size, interpolate=False):
+    """Generate and save depth maps by projecting 3D point cloud onto images using camera poses."""
     os.makedirs(output_dir, exist_ok=True)
-    model.eval()
     start_time = time.time()
-    unique_images = set()
-    with torch.no_grad():
-        for img1, img2 in pairs:
-            img1_idx, img2_idx = img1['idx'], img2['idx']
-            img1_name = img1['name']
-            if img1_idx not in unique_images:
-                unique_images.add(img1_idx)
-                img1_tensor = torch.from_numpy(img1['img']).permute(2, 0, 1).unsqueeze(0).to(device).float() / 255.0
-                img2_tensor = torch.from_numpy(img2['img']).permute(2, 0, 1).unsqueeze(0).to(device).float() / 255.0
-                pred = model(img1_tensor, img2_tensor)
-                depth1 = pred['depth1'].squeeze().cpu().numpy()
-                # Save depth map as .npy
-                depth_file = os.path.join(output_dir, f"depth_{img1_name.replace('/', '_')}.npy")
-                np.save(depth_file, depth1)
-                # Save depth map as RGB visualization
-                depth_rgb = depth_to_rgb(depth1)
-                depth_img = PIL.Image.fromarray(depth_rgb)
-                depth_img.save(os.path.join(output_dir, f"depth_{img1_name.replace('/', '_')}.png"))
-                print(f"Depth map for {img1_name} saved to {depth_file} and .png")
+    num_images = len(images)
+
+    for img_id, img_array in images.items():
+        img_name = image_names[img_id]
+        # Get camera pose (world-to-camera) and intrinsics
+        pose_w2c = world_to_cam[img_id]  # 4x4 matrix
+        K = intrinsics[img_id]  # 3x3 intrinsics matrix
+
+        # Initialize depth map
+        h, w = img_array.shape[:2]
+        depth_map = np.zeros((h, w), dtype=np.float32)
+
+        # Project 3D points to 2D image plane
+        points = np.array([p[0] for p in points3d], dtype=np.float32)  # Nx3
+        points_hom = np.hstack((points, np.ones((points.shape[0], 1))))  # Nx4 (homogeneous)
+        cam_points = (pose_w2c @ points_hom.T).T  # Transform to camera coordinates
+        depths = cam_points[:, 2]  # Z-coordinate in camera frame (depth)
+
+        # Project to image plane
+        valid_mask = depths > 0  # Only project points in front of the camera
+        cam_points = cam_points[valid_mask]
+        depths = depths[valid_mask]
+        if len(depths) == 0:
+            print(f"Warning: No valid 3D points project to {img_name}. Skipping depth map.")
+            continue
+
+        # Apply camera intrinsics
+        img_points = (K @ cam_points[:, :3].T).T  # Nx3 (x, y, z)
+        img_points_2d = img_points[:, :2] / img_points[:, 2:3]  # Nx2 (u, v)
+
+        # Filter points within image bounds
+        u, v = img_points_2d[:, 0], img_points_2d[:, 1]
+        valid_bounds = (u >= 0) & (u < w) & (v >= 0) & (v < h)
+        u, v = u[valid_bounds].astype(int), v[valid_bounds].astype(int)
+        depths = depths[valid_bounds]
+
+        # Assign depth values to pixels
+        depth_map[v, u] = depths
+
+        # Optional: Interpolate sparse depth map
+        if interpolate:
+            from scipy.ndimage import map_coordinates
+            valid_pixels = depth_map > 0
+            if np.any(valid_pixels):
+                coords = np.where(valid_pixels)
+                values = depth_map[coords]
+                grid_x, grid_y = np.mgrid[0:h, 0:w]
+                depth_map = map_coordinates(values, [coords[0], coords[1]], output=depth_map, order=1, mode='constant',
+                                            cval=0.0)
+
+        # Save depth map as .npy
+        depth_file = os.path.join(output_dir, f"depth_{img_name.replace('/', '_')}.npy")
+        np.save(depth_file, depth_map)
+
+        # Save depth map as RGB visualization
+        depth_rgb = depth_to_rgb(depth_map)
+        depth_img = PIL.Image.fromarray(depth_rgb)
+        depth_img.save(os.path.join(output_dir, f"depth_{img_name.replace('/', '_')}.png"))
+        print(f"Depth map for {img_name} saved to {depth_file} and .png")
+
     elapsed = time.time() - start_time
-    num_images = len(unique_images)
     fps = num_images / elapsed if elapsed > 0 else float('inf')
     metrics['depth_maps'] = {'time': elapsed, 'num_images': num_images, 'fps': fps}
     print(f"Depth map generation: {num_images} images in {elapsed:.2f}s, FPS: {fps:.2f}")
+
+
+
+
+
+
+def depth_to_rgb(depth_map):
+    """
+    Convert a depth map to an RGB visualization using a colormap.
+
+    Args:
+        depth_map (np.ndarray): 2D array of depth values (float32).
+
+    Returns:
+        np.ndarray: RGB image (H, W, 3) with uint8 values.
+    """
+    # Create a copy to avoid modifying the input
+    depth_map = depth_map.copy()
+
+    # Mask out zero values (common in sparse depth maps)
+    valid_mask = depth_map > 0
+    if not np.any(valid_mask):
+        # If no valid depths, return a black image
+        return np.zeros((*depth_map.shape, 3), dtype=np.uint8)
+
+    # Normalize depth values to [0, 1] based on valid depths
+    valid_depths = depth_map[valid_mask]
+    depth_min, depth_max = valid_depths.min(), valid_depths.max()
+    if depth_max == depth_min:
+        # Avoid division by zero if all depths are the same
+        normalized_depth = np.zeros_like(depth_map)
+        normalized_depth[valid_mask] = 1.0
+    else:
+        normalized_depth = np.zeros_like(depth_map)
+        normalized_depth[valid_mask] = (depth_map[valid_mask] - depth_min) / (depth_max - depth_min)
+
+    # Apply colormap (jet is a common choice for depth visualization)
+    cmap = cm.get_cmap('jet')
+    rgb = cmap(normalized_depth)[:, :, :3]  # Take RGB channels, discard alpha
+    rgb = (rgb * 255).astype(np.uint8)  # Convert to uint8
+    return rgb
 
 def save_pointcloud(points3d, output_dir):
     """Save sparse 3D point cloud as a .ply file."""
@@ -241,7 +327,8 @@ def main():
 
         # Save outputs
         save_poses(world_to_cam, image_names, os.path.join(output_dir, 'poses'))
-        save_depth_maps(model, imgs, pairs, args.device, os.path.join(output_dir, 'depth_maps'), metrics)
+        save_depth_maps(image_names, world_to_cam, intrinsics, points3d, images, os.path.join(output_dir, 'depth_maps'), metrics,
+                        args.image_size, interpolate=False)
         if args.save_pointcloud:
             save_pointcloud(points3d, output_dir)
 

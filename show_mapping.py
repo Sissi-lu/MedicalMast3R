@@ -6,6 +6,7 @@ from mast3r.fast_nn import fast_reciprocal_NNs
 import mast3r.utils.path_to_dust3r
 from dust3r.inference import inference
 from dust3r.utils.image import load_images
+from peft import PeftModel
 
 if __name__ == '__main__':
     device = 'cuda'
@@ -13,17 +14,26 @@ if __name__ == '__main__':
     lr = 0.01
     niter = 300
 
-    data_dir = "/data_new/luxiaoxi/dataset/medical_depth/SCARED_test_files/dataset1/keyframe3/image_02/data"
-
     # model_name = "naver/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric"
     # model = AsymmetricMASt3R.from_pretrained(model_name).to(device)
 
-    model_name = "/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/mast3r_scared_slam_0515_unfreeze_head_embed_decoder/checkpoint-best.pth"
-    model = AsymmetricMASt3R.from_pretrained(model_name).to(device)
+    #----------------SCARED without lora---------------------#
+    # data_dir = "/data_new/luxiaoxi/dataset/medical_depth/SCARED_test_files/dataset1/keyframe3/image_02/data"
+    # model_name = "/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/mast3r_scared_slam_0515_unfreeze_head_embed_decoder/checkpoint-best.pth"
+    # model = AsymmetricMASt3R.from_pretrained(model_name).to(device)
 
+    #----------------SimCol with lora------------------------#
+
+    data_dir = "/data_new/luxiaoxi/dataset/medical_slam/SyntheticColon/SyntheticColon_I/Frames_S5"
+    model_name = "/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/mast3r_simcol_unfreeze_mapping_0524/checkpoint-best.pth"
+    # model_name = "/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/mast3r_simcol_lora_finetune_decoder_encoder_0524/checkpoint-best.pth"
+    # lora_path = "/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/mast3r_simcol_lora_finetune_decoder_encoder_0524/lora-best"
+    model = AsymmetricMASt3R.from_pretrained(model_name).to(device)
+    # model = PeftModel.from_pretrained(model, lora_path, is_trainable=False)
 
     # images = load_images(['dust3r/croco/assets/Chateau1.png', 'dust3r/croco/assets/Chateau2.png'], size=512)
-    images = load_images([os.path.join(data_dir, "0000000002.png"), os.path.join(data_dir, "0000000154.png")], size=512)
+    # images = load_images([os.path.join(data_dir, "0000000002.png"), os.path.join(data_dir, "0000000154.png")], size=512)
+    images = load_images([os.path.join(data_dir, "FrameBuffer_0000.png"), os.path.join(data_dir, "FrameBuffer_0001.png")],size=512)
     output = inference([tuple(images)], model, device, batch_size=1, verbose=False)
 
     # at this stage, you have the raw dust3r predictions
@@ -51,13 +61,13 @@ if __name__ == '__main__':
     # visualize a few matches
     import numpy as np
     import torch
-    import torchvision.transforms.functional
     import matplotlib
-    matplotlib.use('TkAgg')  # or 'Qt5Agg' or 'Agg'
+    matplotlib.use('Agg')
     from matplotlib import pyplot as pl
 
-    n_viz = 30
+    n_viz = 20
     num_matches = matches_im0.shape[0]
+    print("num_matches: ", num_matches)
     match_idx_to_viz = np.round(np.linspace(0, num_matches - 1, n_viz)).astype(int)
     viz_matches_im0, viz_matches_im1 = matches_im0[match_idx_to_viz], matches_im1[match_idx_to_viz]
 
@@ -79,4 +89,5 @@ if __name__ == '__main__':
     for i in range(n_viz):
         (x0, y0), (x1, y1) = viz_matches_im0[i].T, viz_matches_im1[i].T
         pl.plot([x0, x1 + W0], [y0, y1], '-+', color=cmap(i / (n_viz - 1)), scalex=False, scaley=False)
+    pl.savefig('./output_plot.png')  # Save to a file
     pl.show()
