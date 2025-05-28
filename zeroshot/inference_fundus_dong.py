@@ -43,7 +43,7 @@ import mast3r.utils.path_to_dust3r  # noqa
 # print("Forced device:", torch.cuda.current_device())
 # print("Device name:", torch.cuda.get_device_name(torch.cuda.current_device()))
 
-# print("CUDA available:", torch.cuda.is_available())
+# print("CUDA available:", torch.cuda.is_available())--
 # print("Device count:", torch.cuda.device_count())
 # print("Current device:", torch.cuda.current_device())
 # print("Device name:", torch.cuda.get_device_name(torch.cuda.current_device()))
@@ -53,11 +53,11 @@ def parse_args():
     # where the checkpoints is
     parser.add_argument('--base-dir', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalMast3R/',
                         help="project location")
-    parser.add_argument('--model-name', type=str, default='checkpoints/fundusdong_bs2_0509/checkpoint-best.pth')
+    parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/fundusdong_bs2_0507/checkpoint-best.pth')
     # where the endoscope is
     parser.add_argument('--input-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth/final_version_processed')
     # parser.add_argument('--input-data', type=str, help='cutting_tissues_twice or pulling_soft_tissues', default='cutting_tissues_twice')
-    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/Mast3R_510')
+    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/Mast3R_0528_media_17')
     parser.add_argument('--device', type=str, default='cuda')
     # parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/eyetube_phase4_results/anterior/23_Gauge_Plaque_Dissection_of_Anterior_Persistent_Fetal_Vasculature_in_a_2_week_old_Boy/dataset0/dust3r/')
     # parser.add_argument('--model-name', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalDust3R/naver/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth')
@@ -134,18 +134,30 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
 
     confidence_masks = to_numpy([c > min_conf_thr for c in confs])
 
-    # outfile = get_3D_model_from_scene(save_folder, silent=False, scene=scene, min_conf_thr=1.1,
-    #                                   as_pointcloud=True, mask_sky=False,
-    #                                   clean_depth=True, transparent_cams=False, cam_size=0.05, show_cam=True,
-    #                                   save_name=None)
+    rgbimg = scene.imgs
+    depths = to_numpy(scene.get_depthmaps())
+    confs = to_numpy([c for c in confs])
 
-    # online_showing(scene)
+    from matplotlib import pyplot as pl
+    from dust3r.utils.image import rgb
+    cmap = pl.get_cmap('jet')
+    depths_max = max([d.max() for d in depths])
+    depths = [d / depths_max for d in depths]
+    confs_max = max([d.max() for d in confs])
+    new_confs = [d / confs_max for d in confs]
 
-    # rgbs = scene.save_rgb_imgs(save_folder)
-    save_poses = scene.save_tum_poses(f'{save_folder}/pred_traj.txt')
-    K = scene.save_intrinsics(f'{save_folder}/pred_intrinsics.txt')
-    save_depth_maps = scene.save_depth_maps(save_folder)
-    save_relative_maps = scene.save_relative_depth_maps(save_folder)
+    rgb_imgs = []
+    depth_imgs = []
+    confs_imgs = []
+    for i in range(len(rgbimg)):
+        rgb_imgs.append(rgbimg[i])
+        depth_imgs.append(rgb(depths[i]))
+        confs_imgs.append(rgb(new_confs[i]))
+
+
+    np.save(os.path.join(save_folder, "rgb.npy"), rgb_imgs)
+    np.save(os.path.join(save_folder, "rgb_depth.npy"), depth_imgs)
+    np.save(os.path.join(save_folder, "confs.npy"), confs_imgs)
 
     # ----------------find 2D-2D matches between the two images------------#
     from dust3r.utils.geometry import find_reciprocal_matches, xy_grid
@@ -188,7 +200,7 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
         print("%s ==================NO MATCHING==================" % save_folder)
         with open(os.path.join(txt_dir, "no_pair_viewer_no_matching.txt"), "a") as f:
             f.write("%s \n" % save_folder)
-    return
+    return rgb_imgs, depth_imgs, confs_imgs
 
     # plt.show(block=True)
 
@@ -275,12 +287,12 @@ class SparseGAState():
 def predict_depth(save_folder, left_img, right_img, device, model):
     # parameters
     current_scene_state = None
-    optim_level = "refine+depth"  # choice=["coarse", "refine", "refine+depth"]
+    optim_level = "refine"  # choice=["coarse", "refine", "refine+depth"]
     lr1 = 0.07  # Coarese minimum 0.01-0.2
     niter1 = 500  # num_iterations
-    lr2 = 0.014  # Fine LR:0.005-0.05
+    lr2 = 0.008  # Fine LR:0.005-0.05
     niter2 = 500  # num_iterations
-    min_conf_thr = 0.0001  # adjust the confidence threshold0.0-10
+    min_conf_thr = 0.15  # adjust the confidence threshold0.0-10
     as_pointcloud = True
     mask_sky = False
     clean_depth = True
@@ -288,7 +300,8 @@ def predict_depth(save_folder, left_img, right_img, device, model):
     cam_size = 0.2  # adjust the camera size in the output point cloud: 0.001-1
     scenegraph_type = "complete"
     silent = False
-    matching_conf_thr = 5. # Matching confidence Thr
+    matching_conf_thr = 5 # Matching confidence Thr
+    subsample = 1
 
     # [("complete: all possible image pairs", "complete"),
     # ("swin: sliding window", "swin"),
@@ -311,7 +324,7 @@ def predict_depth(save_folder, left_img, right_img, device, model):
 
     batch_size = 1
     schedule = 'cosine'
-    lr = 0.01
+    lr = 0.0001
     niter = 500
     filelist = [left_img, right_img]
     images = load_images([left_img, right_img], size=512)
@@ -325,9 +338,9 @@ def predict_depth(save_folder, left_img, right_img, device, model):
     cache_dir = save_folder
     os.makedirs(cache_dir, exist_ok=True)
     scene = sparse_global_alignment(filelist, pairs, cache_dir,
-                                    model, lr1=lr1, niter1=niter1, lr2=lr2, niter2=niter2, device=device,
+                                    model, subsample=1, lr1=lr1, niter1=niter1, lr2=lr2, niter2=niter2, device=device,
                                     opt_depth='depth' in optim_level, shared_intrinsics=shared_intrinsics,
-                                    matching_conf_thr=matching_conf_thr,)
+                                    matching_conf_thr=matching_conf_thr)
 
     outfile_name = os.path.join(save_folder, "scene.glb")
 
@@ -335,12 +348,12 @@ def predict_depth(save_folder, left_img, right_img, device, model):
     outfile = get_3D_model_from_scene(save_folder, silent, scene_state, min_conf_thr, as_pointcloud, mask_sky,
                                       clean_depth, transparent_cams, cam_size, TSDF_thresh)
 
-    save_prediction_results(save_folder, scene_state.sparse_ga, clean_depth, min_conf_thr)
+    rgb_imgs, depth_imgs, confs_imgs = save_prediction_results(save_folder, scene_state.sparse_ga, clean_depth, min_conf_thr)
 
     depths = scene_state.sparse_ga.get_depthmaps()
     pred_left, pred_right = depths[0].detach().cpu().numpy(), depths[1].detach().cpu().numpy()
 
-    return pred_left, pred_right
+    return pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs
 
 
 def draw_picture(save_folder, pred_left, pred_right, img_left, img_right, left_depth, right_depth):
@@ -389,6 +402,7 @@ def draw_picture(save_folder, pred_left, pred_right, img_left, img_right, left_d
 
     # Adjust layout and save
     plt.tight_layout()  # Prevents overlapping
+    plt.show()
     plt.savefig(os.path.join(save_folder, "comparison_figure.png"), dpi=300)  # Higher DPI for better quality
     plt.close()
     return
@@ -411,20 +425,21 @@ def scale_shift_invariant(pred, gt):
     # pred: predicted depth map (H, W), gt: ground truth depth map (H, W)
 
     # Step 1: Center the depth maps
-    mu_pred = np.mean(pred)  # Scalar
-    mu_gt = np.mean(gt)  # Scalar
+    mu_pred = np.median(pred)  # Scalar
+    mu_gt = np.median(gt)  # Scalar
     pred_centered = pred - mu_pred
     gt_centered = gt - mu_gt
 
     # Step 2: Normalize scale
     # Compute the RMS value of the centered depth maps
-    scale_pred = np.sqrt(np.mean(pred_centered ** 2))  # Scalar
-    scale_gt = np.sqrt(np.mean(gt_centered ** 2))  # Scalar
+    scale_pred = np.sqrt(np.median(pred_centered ** 2))  # Scalar
+    scale_gt = np.sqrt(np.median(gt_centered ** 2))  # Scalar
     # Normalize, adding a small epsilon to avoid division by zero
     pred_normalized = pred_centered / (scale_pred + 1e-6)
     gt_normalized = gt_centered / (scale_gt + 1e-6)
-    # pred_shifted = pred_normalized + np.abs(np.min(pred_normalized))
-    # gt_shifted = gt_normalized + np.abs(np.min(gt_normalized))
+    # shift = min(min(pred_normalized), min(gt_normalized))
+    # pred_shifted = pred_normalized + np.abs(np.min(pred_normalized)) + 0.0001
+    # gt_shifted = gt_normalized + np.abs(np.min(gt_normalized)) + 0.0001
 
     return gt_normalized, pred_normalized
 
@@ -475,11 +490,11 @@ def endoscope_evaluation(args):
         # assert os.path.exists(img_path)
         left_img, left_depth, right_img, right_depth = load_data_path(img_path)
 
-        pred_left, pred_right = predict_depth(save_folder, left_img, right_img, device=args.device, model=model)
+        pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs = predict_depth(save_folder, left_img, right_img, device=args.device, model=model)
 
         pred_left = resize_resolution(pred_left, left_depth)
         # left_depth = resize_resolution()
-        # pred_right = resize_resolution(pred_right, right_depth)
+        pred_right = resize_resolution(pred_right, right_depth)
 
         draw_picture(save_folder, pred_left, pred_right, left_img, right_img, left_depth, right_depth)
 
@@ -487,19 +502,31 @@ def endoscope_evaluation(args):
         # ---------------------------d1, d2, d3----------------------------#
         total_metric = dict()
         # for idx, (pred, gt) in enumerate(zip(pred_left, left_depth)):
-        pred = pred_left
-        gt = left_depth
+        pred_depth = pred_left
+        gt_depth = left_depth
+        min_depth = 0.001
+        max_depth = 150
 
 
         ##-------------------overlook_shift_and_scared_invariant--------------------#
-        gt, pred = scale_shift_invariant(pred, gt)
+
+        if min_depth is not None and max_depth is not None:
+            mask = np.logical_and(gt_depth > min_depth, gt_depth < max_depth)
+            print(f"  Valid mask pixels: {mask.sum()} / {mask.size}")
+
+        pred_depth = pred_depth[mask]
+        gt_depth = gt_depth[mask]
+
+        pred_depth[pred_depth < min_depth] = min_depth
+        pred_depth[pred_depth > max_depth] = max_depth
+
+        # ratio = np.median(gt_depth) / (np.median(pred_depth) + 1e-5)
+        # pred_depth *= ratio
+        gt, pred = scale_shift_invariant(pred_depth, gt_depth)
 
         pred = (pred - pred.min()) / (pred.max() - pred.min())
-        # # # pred = 1/(1e-6 + pred)
-        # # # gt = 1/(1e-6 + gt)
         gt = (gt - gt.min()) / (gt.max() - gt.min())
 
-        # draw_picture(save_folder, pred, gt, left_img, right_img)
         depth_metric = eval_depth_numpy(pred, gt, None)
 
 

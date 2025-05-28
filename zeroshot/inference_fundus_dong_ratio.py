@@ -53,11 +53,11 @@ def parse_args():
     # where the checkpoints is
     parser.add_argument('--base-dir', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalMast3R/',
                         help="project location")
-    parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/fundusdong_bs2_0507/checkpoint-best.pth')
+    parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/fundusdong_bs4_0526_mast_head/checkpoint-best.pth')
     # where the endoscope is
     parser.add_argument('--input-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth/final_version_processed')
     # parser.add_argument('--input-data', type=str, help='cutting_tissues_twice or pulling_soft_tissues', default='cutting_tissues_twice')
-    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/Mast3R_0528_media_17_seg')
+    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/Mast3R_0528_best_ratio')
     parser.add_argument('--device', type=str, default='cuda')
     # parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/eyetube_phase4_results/anterior/23_Gauge_Plaque_Dissection_of_Anterior_Persistent_Fetal_Vasculature_in_a_2_week_old_Boy/dataset0/dust3r/')
     # parser.add_argument('--model-name', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalDust3R/naver/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth')
@@ -208,7 +208,31 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
 
 
 def load_data_path(img_path):
-
+    ##
+    # img_path = img_path.replace("data_new", "data")
+    # if data_name.split('_')[0] == "abs":
+    #     left_img = os.path.join(img_path, "imgL.png")
+    #     right_img = os.path.join(img_path, "imgR.png")
+    #
+    #     left_depth = left_img.replace("img", "depth")
+    #     right_depth = right_img.replace("img", "depth")
+    # elif data_name.split('_')[0] == "scared":
+    #     left_img = os.path.join(img_path, "Left_Image.png")
+    #     right_img = os.path.join(img_path, "Right_Image.png")
+    #
+    #     left_depth = left_img.replace("Left_Image", "depthmap_left")
+    #     right_depth = right_img.replace("Right_Image", "depthmap_right")
+    # elif data_name.split('_')[0] == "servct":
+    #
+    #     data_root = "/data_new/luxiaoxi/dataset/medical_depth/SERV-CT_preprocessed"
+    #     # data_root = "/data/luxiaoxi/dataset/medical_depth/SERV-CT_preprocessed"
+    #
+    #     left_img = os.path.join(data_root, "left", img_path)
+    #     right_img = os.path.join(data_root, "right", img_path)
+    #
+    #     left_depth = left_img.replace("left", "depthL")
+    #     right_depth = right_img.replace("right", "depthR")
+    # elif data_name.split('_')[0] == "fundus":
     left_img = img_path
     right_img = img_path.replace('left', 'right')
 
@@ -224,14 +248,20 @@ def load_data_path(img_path):
     # l_depth = cv2.imread(left_depth, cv2.IMREAD_GRAYSCALE)
     l_depth = np.load(left_depth)
     r_depth = np.load(right_depth)
-
-    left_seg_path = left_img.replace("imgs", "instrument_mask")
-    right_seg_path = right_img.replace("imgs", "instrument_mask")
-
-    left_seg = cv2.imread(left_seg_path, cv2.IMREAD_GRAYSCALE)
-    right_seg = cv2.imread(right_seg_path, cv2.IMREAD_GRAYSCALE)
-
-    return left_img, l_depth, right_img, r_depth, left_seg, right_seg
+    # l_depth = cv2.imread(left_depth, cv2.IMREAD_UNCHANGED) / 256.0
+    # r_depth = cv2.imread(right_depth, cv2.IMREAD_UNCHANGED) / 256.0
+    # plt.subplot(121)
+    # plt.imshow(left_)
+    # plt.title('left depth')
+    # plt.colorbar()
+    #
+    # plt.subplot(122)
+    # plt.imshow(right_)
+    # plt.title('right depth')
+    # plt.colorbar()
+    # plt.savefig(os.path.join(save_folder, "left_and_right_rgbs.png"))
+    # plt.close()
+    return left_img, l_depth, right_img, r_depth
 
 
 # def draw_comparison(left_img, left_depth, right_img, right_depth, pred_left, pred_right)
@@ -395,15 +425,15 @@ def scale_shift_invariant(pred, gt):
     # pred: predicted depth map (H, W), gt: ground truth depth map (H, W)
 
     # Step 1: Center the depth maps
-    mu_pred = np.median(pred)  # Scalar
-    mu_gt = np.median(gt)  # Scalar
+    mu_pred = np.mean(pred)  # Scalar
+    mu_gt = np.mean(gt)  # Scalar
     pred_centered = pred - mu_pred
     gt_centered = gt - mu_gt
 
     # Step 2: Normalize scale
     # Compute the RMS value of the centered depth maps
-    scale_pred = np.sqrt(np.median(pred_centered ** 2))  # Scalar
-    scale_gt = np.sqrt(np.median(gt_centered ** 2))  # Scalar
+    scale_pred = np.sqrt(np.mean(pred_centered ** 2))  # Scalar
+    scale_gt = np.sqrt(np.mean(gt_centered ** 2))  # Scalar
     # Normalize, adding a small epsilon to avoid division by zero
     pred_normalized = pred_centered / (scale_pred + 1e-6)
     gt_normalized = gt_centered / (scale_gt + 1e-6)
@@ -457,10 +487,7 @@ def endoscope_evaluation(args):
         save_folder = os.path.join(args.output_dir, img_name)
         os.makedirs(save_folder, exist_ok=True)
         # assert os.path.exists(img_path)
-        left_img, left_depth, right_img, right_depth, left_msk, right_msk = load_data_path(img_path)
-
-        left_msk = (left_msk / 255).astype("bool")
-        right_msk = (right_msk / 255).astype("bool")
+        left_img, left_depth, right_img, right_depth = load_data_path(img_path)
 
         pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs = predict_depth(save_folder, left_img, right_img, device=args.device, model=model)
 
@@ -481,8 +508,6 @@ def endoscope_evaluation(args):
 
 
         ##-------------------overlook_shift_and_scared_invariant--------------------#
-        pred_depth[left_msk == 0] = 0
-        gt_depth[left_msk == 0] = 0
 
         if min_depth is not None and max_depth is not None:
             mask = np.logical_and(gt_depth > min_depth, gt_depth < max_depth)
@@ -494,14 +519,14 @@ def endoscope_evaluation(args):
         pred_depth[pred_depth < min_depth] = min_depth
         pred_depth[pred_depth > max_depth] = max_depth
 
-        # ratio = np.median(gt_depth) / (np.median(pred_depth) + 1e-5)
-        # pred_depth *= ratio
-        gt, pred = scale_shift_invariant(pred_depth, gt_depth)
+        ratio = np.median(gt_depth) / (np.median(pred_depth) + 1e-5)
+        pred_depth *= ratio
+        # gt, pred = scale_shift_invariant(pred_depth, gt_depth)
+        #
+        # pred = (pred - pred.min()) / (pred.max() - pred.min())
+        # gt = (gt - gt.min()) / (gt.max() - gt.min())
 
-        pred = (pred - pred.min()) / (pred.max() - pred.min())
-        gt = (gt - gt.min()) / (gt.max() - gt.min())
-
-        depth_metric = eval_depth_numpy(pred, gt, None)
+        depth_metric = eval_depth_numpy(pred_depth, gt_depth, None)
 
 
         for key, values in depth_metric.items():

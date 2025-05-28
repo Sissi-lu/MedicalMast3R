@@ -20,7 +20,7 @@ from dust3r.demo import set_print_with_timestamp
 
 import matplotlib.pyplot as pl
 pl.ion()
-
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 torch.backends.cuda.matmul.allow_tf32 = True  # for gpu >= Ampere and pytorch >= 1.12
 
 if __name__ == '__main__':

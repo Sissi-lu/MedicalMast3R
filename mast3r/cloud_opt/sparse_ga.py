@@ -111,7 +111,7 @@ class SparseGA():
     def get_sparse_pts3d(self):
         return self.pts3d
 
-    def get_dense_pts3d(self, clean_depth=True, subsample=8):
+    def get_dense_pts3d(self, clean_depth=True, subsample=1):
         assert self.canonical_paths, 'cache_path is required for dense 3d points'
         device = self.cam2w.device
         confs = []
