@@ -39,6 +39,7 @@ from mast3r.cloud_opt.tsdf_optimizer import TSDFPostProcess
 import torch
 import mast3r.utils.path_to_dust3r  # noqa
 from PIL import Image
+from scipy.spatial.transform import Rotation as R
 # torch.cuda.set_device(4)  # Force GPU 4
 # device = torch.device("cuda:4")
 # print("Forced device:", torch.cuda.current_device())
@@ -64,6 +65,88 @@ def parse_args():
     # parser.add_argument('--model-name', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalDust3R/naver/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth')
     return parser.parse_args()
 
+
+def get_gt_poses(scene, root):
+    """
+    :param scene: Index of trajectory
+    :param root: Root folder of dataset
+    :return: all camera poses as quaternion vector and 4x4 projection matrix
+    """
+    locations = []
+    rotations = []
+    loc_reader = open(root + '/SavedPosition_' + scene + '.txt', 'r')
+    rot_reader = open(root + '/SavedRotationQuaternion_' + scene + '.txt', 'r')
+    for line in loc_reader:
+        locations.append(list(map(float, line.split())))
+
+    for line in rot_reader:
+        rotations.append(list(map(float, line.split())))
+
+    locations = np.array(locations)
+    rotations = np.array(rotations)
+    poses = np.concatenate([locations, rotations], 1)
+
+    r = R.from_quat(rotations).as_matrix()
+
+    TM = np.eye(4)
+    TM[1, 1] = -1
+
+    poses_mat = []
+    for i in range(locations.shape[0]):
+        ri = r[i]
+        Pi = np.concatenate((ri, locations[i].reshape((3, 1))), 1)
+        Pi = np.concatenate((Pi, np.array([0.0, 0.0, 0.0, 1.0]).reshape((1, 4))), 0)
+        Pi_left = TM @ Pi @ TM   # Translate between left and right handed systems
+        poses_mat.append(Pi_left)
+
+    return np.array(poses_mat)
+
+def get_relative_pose(pose_t0, pose_t1):
+    """
+    :param pose_tx: 4x4 camera pose describing camera to world frame projection of camera x.
+    :return: Position of camera 1's origin in camera 0's frame.
+    """
+    return np.matmul(np.linalg.inv(pose_t0), pose_t1)
+
+def get_traj(first, P):
+    traj, traj_4x4 = [], []
+    next = first
+    traj.append(next[:3, -1])
+    traj_4x4.append(first)
+
+    for i in range(0, P.shape[0]):
+        Pi = P[i]
+        next = np.matmul(next, Pi)
+        traj.append(next[:3, -1])
+        traj_4x4.append(next)
+
+    traj = np.array(traj)
+    traj_4x4 = np.array(traj_4x4)
+    return traj, traj_4x4
+
+
+def relative_transformation(T_w_cam1, T_w_cam2):
+    """
+    Compute the relative 4x4 transformation matrix from cam1 to cam2.
+
+    Args:
+        T_w_cam1 (np.ndarray): 4x4 transformation matrix from world to cam1.
+        T_w_cam2 (np.ndarray): 4x4 transformation matrix from world to cam2.
+
+    Returns:
+        np.ndarray: 4x4 transformation matrix from cam1 to cam2.
+    """
+    # Ensure inputs are 4x4 matrices
+    if T_w_cam1.shape != (4, 4) or T_w_cam2.shape != (4, 4):
+        raise ValueError("Input matrices must be 4x4")
+
+    # Compute inverse of T_w_cam1
+    T_w_cam1_inv = np.linalg.inv(T_w_cam1)
+
+    # Compute relative transformation T_cam1_cam2 = T_w_cam2 * inv(T_w_cam1)
+    T_cam1_cam2 = np.dot(T_w_cam2, T_w_cam1_inv)
+
+    return T_cam1_cam2
 
 def online_showing(scene):
     viz = SceneViz()
@@ -127,17 +210,18 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr, img_n
 
     # scene.pts3d = pts3d
     # scene.depthmaps = depthmaps
-    #
     # poses = scene.save_tum_poses(f'{save_folder}/pred_traj.txt')
     # K = scene.save_intrinsics(f'{save_folder}/pred_intrinsics.txt')
     # depth_maps = scene.save_depth_maps(save_folder)
     # relative_depth_maps = scene.save_relative_depth_maps(save_folder)
+    poses = scene.get_im_poses()
 
     confidence_masks = to_numpy([c > min_conf_thr for c in confs])
 
     rgbimg = scene.imgs
     depths = to_numpy(scene.get_depthmaps())
     confs = to_numpy([c for c in confs])
+    poses = to_numpy(poses)
 
     from matplotlib import pyplot as pl
     from dust3r.utils.image import rgb
@@ -156,7 +240,7 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr, img_n
         confs_imgs.append(rgb(new_confs[i]))
 
 
-    np.save(os.path.join(save_folder, "%s_rgb.npy"%img_name), rgb_imgs)
+    # np.save(os.path.join(save_folder, "%s_rgb.npy"%img_name), rgb_imgs)
     np.save(os.path.join(save_folder, "%s_rgb_depth.npy"%img_name), depth_imgs)
     np.save(os.path.join(save_folder, "%s_confs.npy"%img_name), confs_imgs)
 
@@ -201,7 +285,7 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr, img_n
         print("%s ==================NO MATCHING==================" % save_folder)
         with open(os.path.join(txt_dir, "no_pair_viewer_no_matching.txt"), "a") as f:
             f.write("%s \n" % save_folder)
-    return rgb_imgs, depth_imgs, confs_imgs
+    return rgb_imgs, depth_imgs, confs_imgs, poses
 
     # plt.show(block=True)
 
@@ -292,15 +376,15 @@ def predict_depth(save_folder, left_img, right_img, device, model, img_name):
     outfile_name = os.path.join(save_folder, "%s_scene.glb"%img_name)
 
     scene_state = SparseGAState(scene, False, cache_dir, outfile_name)
-    outfile = get_3D_model_from_scene(save_folder, silent, scene_state, min_conf_thr, as_pointcloud, mask_sky,
-                                      clean_depth, transparent_cams, cam_size, TSDF_thresh)
+    # outfile = get_3D_model_from_scene(save_folder, silent, scene_state, min_conf_thr, as_pointcloud, mask_sky,
+    #                                   clean_depth, transparent_cams, cam_size, TSDF_thresh)
 
-    rgb_imgs, depth_imgs, confs_imgs = save_prediction_results(save_folder, scene_state.sparse_ga, clean_depth, min_conf_thr, img_name)
+    rgb_imgs, depth_imgs, confs_imgs, poses = save_prediction_results(save_folder, scene_state.sparse_ga, clean_depth, min_conf_thr, img_name)
 
     depths = scene_state.sparse_ga.get_depthmaps()
     pred_left, pred_right = depths[0].detach().cpu().numpy(), depths[1].detach().cpu().numpy()
 
-    return pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs
+    return pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs, poses
 
 
 def draw_picture(save_folder, pred_left, pred_right, img_left, img_right, left_depth, right_depth, img_name):
@@ -392,6 +476,36 @@ def scale_shift_invariant(pred, gt):
 
 ### GT -> pred 中值对齐
 
+def get_scale(gt, pred):
+    scale_factor = np.sum(gt[:, :3, -1] * pred[:, :3, -1])/np.sum(pred[:, :3, -1] ** 2)
+    return scale_factor
+
+def compute_translation_errors(gt, pred, delta=1):
+    errs = []
+    rot_err = []
+    rot_gt = []
+    trans_gt = []
+    for i in range(pred.shape[0]-delta):
+        Q = np.linalg.inv(gt[i, :, :]) @ gt[i+delta, :, :]
+        P = np.linalg.inv(pred[i, :, :]) @ pred[i+delta, :, :]
+        E = np.linalg.inv(Q) @ P
+        t = E[:3, -1]
+        t_gt = Q[:3, -1]
+        trans = np.linalg.norm(t, ord=2)
+        errs.append(trans)
+        tr = np.arccos((np.trace(E[:3, :3]).clip(-3,3) -1)/2)
+        gt_tr = np.arccos((np.trace(Q[:3, :3]) -1)/2)
+        rot_err.append(tr)
+        rot_gt.append(gt_tr)
+        trans_gt.append(np.linalg.norm(t_gt, ord=2))
+
+    errs = np.array(errs)
+
+    ATE = np.median(np.linalg.norm((gt[:, :, -1] - pred[:, :, -1]), ord=2, axis=1))
+    RTE = np.median(errs)
+    ROT = np.median(rot_err)
+
+    return ATE, RTE, errs, ROT * 180 / np.pi, np.mean(rot_gt) * 180 / np.pi
 
 def endoscope_evaluation(args):
     device = args.device
@@ -412,7 +526,7 @@ def endoscope_evaluation(args):
     assert os.path.exists(model_name), '{} does not exist'.format(model_name)
     # you can put the path to a local checkpoint in model_name if needed
     model = AsymmetricMASt3R.from_pretrained(model_name).to(device)
-    i = 0
+    idx = 0
 
     folders = sorted([f for f in os.listdir(args.input_dir) if not f.endswith('txt')])
     for folder in folders:
@@ -424,6 +538,18 @@ def endoscope_evaluation(args):
             img_list = [os.path.join(args.input_dir, folder, frame_folder, f) for f in img_list]
             save_folder = os.path.join(args.output_dir, folder, frame_folder)
             os.makedirs(save_folder, exist_ok=True)
+            ## ---------------Deal with GT poses-----------------##
+            sequence = frame_folder.split('_')[1]
+            gt_abs_poses = get_gt_poses(sequence, os.path.join(args.input_dir, folder))
+            gt_rel_poses = []
+            ## Absolute gt poses --> relative gt poses
+            delta = 1
+            for i in range(0, gt_abs_poses.shape[0] - 1, delta):
+                out = get_relative_pose(gt_abs_poses[i], gt_abs_poses[i + delta])
+                gt_rel_poses.append(out)
+            first_pose = gt_abs_poses[0]
+
+            pred_rel_poses = []
             for img_path in metric_logger.log_every(img_list[:-1], print_freq=1, header=header):
                 # if args.data_name.split('_')[0] == "servct":
                 #     save_folder = os.path.join(output_dir, img_path.split('.')[0])
@@ -436,11 +562,14 @@ def endoscope_evaluation(args):
 
                 # left_img: path for i img, right_img: path for i+1 img
                 left_img = img_path
-                right_img = img_list[i+1]
+                right_img = img_list[idx+1]
                 left_depth = np.array(Image.open(left_img.replace('FrameBuffer', 'Depth'))) /255 / 256
                 right_depth = np.array(Image.open(right_img.replace('FrameBuffer', 'Depth'))) / 255 /256
 
-                pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs = predict_depth(save_folder, left_img, right_img, device=args.device, model=model, img_name=img_name)
+                pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs, poses = predict_depth(save_folder, left_img, right_img, device=args.device, model=model, img_name=img_name)
+                pred_rel_pose = relative_transformation(poses[0], poses[1])
+                pred_rel_poses.append(pred_rel_pose)
+
 
                 pred_left = resize_resolution(pred_left, left_depth)
                 # left_depth = resize_resolution()
@@ -484,12 +613,46 @@ def endoscope_evaluation(args):
 
                 metric_logger.update(**total_metric)
 
-                i = i+1
+
                 txt_dir = os.path.abspath(os.path.join(save_folder, "../.."))
-                with open(os.path.join(txt_dir, "eval_results.txt"), "a") as f:
-                    f.write("img_path: %s \n" % img_path)
+                with open(os.path.join(txt_dir, "eval_depth_results.txt"), "a") as f:
+                    if idx == 0:
+                        f.write('-----------Results sequence %s---------\n' % sequence)
+                        f.write('length of sequences: %d \n' % len(img_list))
                     f.write(str(metric_logger))
-                    f.write("\n \n")
+                    f.write("\n")
+                    if idx == len(img_list) - 2:
+                        f.write('----------------------------------------\n')
+                        f.write('\n\n\n')
+                idx = idx + 1
+
+            with open(os.path.join(save_folder, "pred_poses.txt"), "w") as f:
+                for pose in pred_rel_pose:
+                    pose = pose.reshape(-1)
+                    line = ' '.join(map(str, pose))
+                    f.write(line + '\n')
+
+            gt_traj, gt_traj_4x4 = get_traj(first_pose, np.array(gt_rel_poses))  # This is not necessary, just to show that get_traj() maps relative gt poses back to gt_abs_poses
+            pred_traj, pred_traj_4x4 = get_traj(first_pose, np.array(pred_rel_poses))
+            scale = get_scale(np.array(gt_rel_poses[:len(pred_rel_poses)]), np.array(pred_rel_poses))
+            ATE, RTE, errs, ROT, gt_rot_mag = compute_translation_errors(gt_traj_4x4[:len(pred_traj_4x4)], pred_traj_4x4)
+            print('------------------------')
+            print('Results sequence ', sequence)
+            print('length of sequences:', len(gt_traj_4x4))
+            print("Scale {:8.4f}".format(scale))
+            print("ATE {:10.4f} cm".format(ATE))
+            print("RTE {:10.4f} cm".format(RTE))
+            print("ROT {:10.4f} degrees".format(ROT))
+            txt_dir = os.path.abspath(os.path.join(save_folder, "../.."))
+            with open(os.path.join(txt_dir, "eval_pose_results.txt"), "a") as f:
+                f.write('-----------Results sequence %s---------\n'%sequence)
+                f.write('length of sequences: %d \n'%len(gt_traj_4x4))
+                f.write("Scale {:8.4f} \n".format(scale))
+                f.write("ATE {:10.4f} cm \n".format(ATE))
+                f.write("RTE {:10.4f} cm \n".format(RTE))
+                f.write("ROT {:10.4f} degrees \n".format(ROT))
+                f.write("\n\n\n")
+
 
 if __name__ == "__main__":
     args = parse_args()
