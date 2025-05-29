@@ -30,7 +30,7 @@ import croco.utils.misc as misc  # noqa
 from croco.utils.misc import NativeScalerWithGradNormCount as NativeScaler  # noqa
 import torch
 import shutil
-
+from safetensors.torch import load_file
 from mast3r.demo import _convert_scene_output_to_glb, main_demo
 from mast3r.model import AsymmetricMASt3R
 from mast3r.utils.misc import hash_md5
@@ -532,8 +532,32 @@ def endoscope_evaluation(args):
     abs_path = os.path.abspath(os.path.join(args.model_name, ".."))
     lora_path = os.path.join(abs_path, "lora-best")
     # adapter_config_path = os.path.join(args.lora_path, 'adapter_config.json')
-    model = PeftModel.from_pretrained(model, lora_path, is_trainable=False)
-    print(f"Loaded LoRA adapter from {lora_path}")
+
+    # Optionally, modify the state dictionary before loading
+    def fix_state_dict_keys(state_dict):
+        new_state_dict = {}
+        for key, value in state_dict.items():
+            # Remove the `modules_to_save.default` namespace if present
+            if "dec_blocks" in key.split('.') or "dec_blocks2" in key.split('.'):
+                if "modules_to_save.default" in key:
+                    new_key = key.replace(".modules_to_save.default", "")
+                    new_state_dict[new_key] = value
+                else:
+                    new_state_dict[key] = value
+            else:
+                new_state_dict[key] = value
+        return new_state_dict
+
+    if "mast3r_simcol_lora_encoder_unfreeze_rest_0526" in lora_path.split('/'):
+        try:
+            checkpoint = torch.load(f"{lora_path}/adapter_model.bin")
+        except:
+            checkpoint = load_file(f"{lora_path}/adapter_model.safetensors")
+        checkpoint = fix_state_dict_keys(checkpoint)
+        model.load_state_dict(checkpoint, strict=False)
+    else:
+        model = PeftModel.from_pretrained(model, lora_path, is_trainable=False)
+        print(f"Loaded LoRA adapter from {lora_path}")
 
 
     idx = 0
