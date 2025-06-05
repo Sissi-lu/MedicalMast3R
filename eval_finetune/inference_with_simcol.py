@@ -517,11 +517,6 @@ def endoscope_evaluation(args):
 
     # for folder_idx, folder in enumerate(folder_lists):
     header = 'folder: [{}]'.format("endonerf")
-
-    img_list = []
-    img_list = [f for f in os.listdir(args.input_dir) if f.startswith("FrameBuffer")]
-    img_list = [os.path.join(args.input_dir, f) for f in img_list]
-
     model_name = os.path.join(args.base_dir, args.model_name)
     assert os.path.exists(model_name), '{} does not exist'.format(model_name)
     # you can put the path to a local checkpoint in model_name if needed
@@ -596,11 +591,11 @@ def endoscope_evaluation(args):
                 pred_depth = pred_depth[mask]
                 gt_depth = gt_depth[mask]
 
-                pred_depth[pred_depth < min_depth] = min_depth
-                pred_depth[pred_depth > max_depth] = max_depth
-
                 ratio = np.median(gt_depth) / (np.median(pred_depth) + 1e-5)
                 pred_depth *= ratio
+
+                pred_depth[pred_depth < min_depth] = min_depth
+                pred_depth[pred_depth > max_depth] = max_depth
 
                 # pred = (pred - pred.min()) / (pred.max() - pred.min())
                 # gt = (gt - gt.min()) / (gt.max() - gt.min())
@@ -624,6 +619,7 @@ def endoscope_evaluation(args):
                     if idx == len(img_list) - 2:
                         f.write('----------------------------------------\n')
                         f.write('\n\n\n')
+                        idx = 0
                 idx = idx + 1
 
             with open(os.path.join(save_folder, "pred_poses.txt"), "w") as f:
@@ -631,8 +627,7 @@ def endoscope_evaluation(args):
                     pose = pose.reshape(-1)
                     line = ' '.join(map(str, pose))
                     f.write(line + '\n')
-
-            gt_traj, gt_traj_4x4 = get_traj(first_pose, np.array(gt_rel_poses))  # This is not necessary, just to show that get_traj() maps relative gt poses back to gt_abs_poses
+                gt_traj, gt_traj_4x4 = get_traj(first_pose, np.array(gt_rel_poses))  # This is not necessary, just to show that get_traj() maps relative gt poses back to gt_abs_poses
             pred_traj, pred_traj_4x4 = get_traj(first_pose, np.array(pred_rel_poses))
             scale = get_scale(np.array(gt_rel_poses[:len(pred_rel_poses)]), np.array(pred_rel_poses))
             ATE, RTE, errs, ROT, gt_rot_mag = compute_translation_errors(gt_traj_4x4[:len(pred_traj_4x4)], pred_traj_4x4)
