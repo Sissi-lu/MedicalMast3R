@@ -18,6 +18,7 @@ from dust3r.datasets.absdataset import Abs as DUSt3R_AbsDataset
 from dust3r.datasets.fundus_dong import FundusDong as DUSt3R_FundusDong
 from dust3r.datasets.scared import SCARED as DUSt3R_SCARED
 from dust3r.datasets.simcol import SyntheticColon as DUSt3R_SyntheticColon
+from dust3r.datasets.c3vd import C3VD as DUSt3R_C3VD
 
 class ARKitScenes(DUSt3R_ARKitScenes, MASt3RBaseStereoViewDataset):
     def __init__(self, *args, split, ROOT, **kwargs):
@@ -92,6 +93,11 @@ class SCARED(DUSt3R_SCARED, MASt3RBaseStereoViewDataset):
         self.is_metric_scale=True
 
 class SyntheticColon(DUSt3R_SyntheticColon, MASt3RBaseStereoViewDataset):
+    def __init__(self, mask_bg=True, *args, ROOT, **kwargs):
+        super().__init__(mask_bg, *args, ROOT=ROOT, **kwargs)
+        self.is_metric_scale=True
+
+class C3VD(DUSt3R_C3VD, MASt3RBaseStereoViewDataset):
     def __init__(self, mask_bg=True, *args, ROOT, **kwargs):
         super().__init__(mask_bg, *args, ROOT=ROOT, **kwargs)
         self.is_metric_scale=True
