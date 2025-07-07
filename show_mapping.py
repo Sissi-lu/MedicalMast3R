@@ -5,7 +5,8 @@ from mast3r.fast_nn import fast_reciprocal_NNs
 
 import mast3r.utils.path_to_dust3r
 from dust3r.inference import inference
-from dust3r.utils.image import load_images
+from dust3r.utils.image import load_images, rgb
+
 from peft import PeftModel
 
 if __name__ == '__main__':
@@ -24,8 +25,9 @@ if __name__ == '__main__':
 
     #----------------SimCol with lora------------------------#
 
-    data_dir = "/data_new/luxiaoxi/dataset/medical_slam/SyntheticColon/SyntheticColon_I/Frames_S5"
+    data_dir = "/data_new/luxiaoxi/dataset/medical_slam/SyntheticColon/SyntheticColon_I/Frames_S10"
     model_name = "/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/mast3r_simcol_unfreeze_mapping_0524/checkpoint-best.pth"
+    # model_name = "/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/mast3r_simcol_unfreeze_mapping_0605_resolution_512/checkpoint-best.pth"
     # model_name = "/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/mast3r_simcol_lora_finetune_decoder_encoder_0524/checkpoint-best.pth"
     # lora_path = "/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/mast3r_simcol_lora_finetune_decoder_encoder_0524/lora-best"
     model = AsymmetricMASt3R.from_pretrained(model_name).to(device)
@@ -33,7 +35,7 @@ if __name__ == '__main__':
 
     # images = load_images(['dust3r/croco/assets/Chateau1.png', 'dust3r/croco/assets/Chateau2.png'], size=512)
     # images = load_images([os.path.join(data_dir, "0000000002.png"), os.path.join(data_dir, "0000000154.png")], size=512)
-    images = load_images([os.path.join(data_dir, "FrameBuffer_0000.png"), os.path.join(data_dir, "FrameBuffer_0001.png")],size=512)
+    images = load_images([os.path.join(data_dir, "FrameBuffer_0602.png"), os.path.join(data_dir, "FrameBuffer_0606.png")],size=512)
     output = inference([tuple(images)], model, device, batch_size=1, verbose=False)
 
     # at this stage, you have the raw dust3r predictions
@@ -41,6 +43,18 @@ if __name__ == '__main__':
     view2, pred2 = output['view2'], output['pred2']
 
     desc1, desc2 = pred1['desc'].squeeze(0).detach(), pred2['desc'].squeeze(0).detach()
+    pcd1, pcd2 = pred1['pts3d'].squeeze(0).detach().numpy(), pred2['pts3d_in_other_view'].squeeze(0).detach().numpy()
+    img1, img2 = view1['img'].squeeze(0).numpy(), view2['img'].squeeze(0).numpy()
+    color1 = rgb(img1)
+    color2 = rgb(img2)
+
+    import numpy as np
+    from dust3r.viz import SceneViz, auto_cam_size
+    valid_mask = np.ones([384,512], dtype=bool)
+    viz = SceneViz()
+    viz.add_pointcloud(pcd1, color1, valid_mask)
+    viz.add_pointcloud(pcd2, color2, valid_mask)
+    viz.show()
 
     # find 2D-2D matches between the two images
     matches_im0, matches_im1 = fast_reciprocal_NNs(desc1, desc2, subsample_or_initxy1=8,
