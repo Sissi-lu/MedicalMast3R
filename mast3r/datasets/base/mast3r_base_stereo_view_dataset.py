@@ -9,6 +9,7 @@ import PIL.Image as Image
 import numpy as np
 import torch
 import copy
+from torchvision import transforms
 
 from mast3r.datasets.utils.cropping import (extract_correspondences_from_pts3d,
                                             gen_random_crops, in2d_rect, crop_to_homography)
@@ -271,6 +272,7 @@ class MASt3RBaseStereoViewDataset(BaseStereoViewDataset):
             assert view['depthmap'].shape == view['img'].shape[1:]
             assert view['depthmap'].shape == view['pts3d'].shape[:2]
             assert view['depthmap'].shape == view['valid_mask'].shape
+            # assert view['illumination'].shape[1:] == view['img'].shape[1:]
 
         # last thing done!
         for view in views:
@@ -278,6 +280,16 @@ class MASt3RBaseStereoViewDataset(BaseStereoViewDataset):
             transpose_to_landscape(view)
             # this allows to check whether the RNG is is the same state each time
             view['rng'] = int.from_bytes(self._rng.bytes(4), 'big')
+
+            rgb_image = view['img'].clone()
+            to_pil = transforms.ToPILImage()
+            rgb_image = to_pil(rgb_image)
+            hau, sau, val_ = rgb_image.convert('HSV').split()
+            to_tensor = transforms.ToTensor()
+            val_ = to_tensor(val_)
+            # print(val_.shape)
+            # assert val_.shape[1] == height and val_.shape[2] == width, "the illumination value is not right"
+            view['illumination'] = val_
 
         return views
 
