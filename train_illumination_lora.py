@@ -11,7 +11,7 @@ from mast3r.datasets import ARKitScenes, BlendedMVS, Co3d, MegaDepth, ScanNetpp,
 
 import mast3r.utils.path_to_dust3r  # noqa
 # add mast3r classes to dust3r imports
-import dust3r.training_illumination
+import dust3r.training_illumination_lora
 dust3r.training_illumination_lora.AsymmetricMASt3R = AsymmetricMASt3R
 dust3r.training_illumination_lora.Regr3D = Regr3D
 dust3r.training_illumination_lora.Regr3D_ScaleShiftInv = Regr3D_ScaleShiftInv
