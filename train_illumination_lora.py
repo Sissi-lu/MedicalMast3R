@@ -39,7 +39,7 @@ from dust3r.training import get_args_parser as dust3r_get_args_parser  # noqa
 from dust3r.training_illumination_lora import train  # noqa
 
 # import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 def get_args_parser():
     parser = dust3r_get_args_parser()
