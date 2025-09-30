@@ -15,7 +15,8 @@ from dust3r.losses import Regr3D as Regr3D_dust3r
 from dust3r.utils.geometry import (geotrf, inv, normalize_pointcloud)
 from dust3r.inference import get_pred_pts3d
 from dust3r.utils.geometry import get_joint_pointcloud_depth, get_joint_pointcloud_center_scale
-
+import lietorch
+import math
 
 def apply_log_to_norm(xyz):
     d = xyz.norm(dim=-1, keepdim=True)
@@ -23,6 +24,11 @@ def apply_log_to_norm(xyz):
     xyz = xyz * torch.log1p(d)
     return xyz
 
+def skew_sym(x):
+    b = x.shape[:-1]
+    x, y, z = x.unbind(dim=-1)
+    o = torch.zeros_like(x)
+    return torch.stack([o, -z, y, z, o, -x, -y, x, o], dim=-1).view(*b, 3, 3)
 
 class Regr3D (Regr3D_dust3r):
     def __init__(self, criterion, norm_mode='avg_dis', gt_scale=False, opt_fit_gt=False,
@@ -458,6 +464,366 @@ class MatchingLoss (Criterion, MultiLoss):
 
         details[type(self).__name__] = float(loss.mean())
         return loss, (details | monitoring)
+
+
+def check_convergence(
+    iter,
+    rel_error_threshold,
+    delta_norm_threshold,
+    old_cost,
+    new_cost,
+    delta,
+    verbose=False,
+):
+    # step,
+    # self.cfg["rel_error"],
+    # self.cfg["delta_norm"],
+    # old_cost,
+    # new_cost,
+    # tau_ij_sim3,
+
+    cost_diff = old_cost - new_cost
+    rel_dec = math.fabs(cost_diff / old_cost)
+    delta_norm = torch.linalg.norm(delta)
+
+    converged = rel_dec < rel_error_threshold or delta_norm < delta_norm_threshold
+    if verbose:
+        print(
+            f"{iter=} | {new_cost=} {cost_diff=} {rel_dec=} {delta_norm=} | {converged=}"
+        )
+
+    # print(f"{iter=} | {new_cost=} {cost_diff=} {rel_dec=} {delta_norm=} | {converged=}")
+    return converged
+
+class RenderLoss(Criterion, MultiLoss):
+    """Loss for comparing rendered depth maps from predicted 3D points to ground truth depth maps."""
+    # l_vec: light direction
+    # n_vec: normal vector
+    # h_vec: helf vector = v+l/v+l
+
+    def __init__(self, criterion, dist_clip=None):
+        super().__init__(criterion)
+        self.dist_clip = dist_clip  # Optional distance clipping for robustness
+
+    def get_name(self):
+        return f'RenderLoss({self.criterion})'
+
+    import torch
+
+    def compute_pixel_normals(self, pts3d, valid_mask=None):
+        """
+        Compute surface normals for each pixel in a 3D point cloud.
+        Args:
+            pts3d: torch.Tensor of shape [B, H, W, 3], 3D coordinates (x, y, z) for each pixel
+            valid_mask: torch.Tensor of shape [B, H, W], boolean mask for valid pixels (optional)
+        Returns:
+            normals: torch.Tensor of shape [B, H, W, 3], unit normal vectors for each pixel
+            valid_normals: torch.Tensor of shape [B, H, W], boolean mask for valid normals
+        """
+        B, H, W, _ = pts3d.shape
+
+        # Initialize validity mask if not provided
+        if valid_mask is None:
+            valid_mask = torch.ones(B, H, W, dtype=torch.bool, device=pts3d.device)
+
+        # Initialize output normals and validity mask
+        normals = torch.zeros_like(pts3d)  # Shape: [B, H, W, 3]
+        valid_normals = torch.zeros_like(valid_mask)  # Shape: [B, H, W]
+
+        # Compute vectors to right and down neighbors
+        vec_right = pts3d[:, :, 1:, :] - pts3d[:, :, :-1, :]  # Shape: [B, H, W-1, 3]
+        vec_down = pts3d[:, 1:, :, :] - pts3d[:, :-1, :, :]  # Shape: [B, H-1, W, 3]
+
+        # Compute valid masks for neighbors
+        valid_right = valid_mask[:, :, :-1] & valid_mask[:, :, 1:]  # Shape: [B, H, W-1]
+        valid_down = valid_mask[:, :-1, :] & valid_mask[:, 1:, :]  # Shape: [B, H-1, W]
+
+        # Pad vectors and masks to match original shape
+        vec_right = torch.nn.functional.pad(vec_right, (0, 0, 0, 1), mode='constant', value=0)  # Shape: [B, H, W, 3]
+        vec_down = torch.nn.functional.pad(vec_down, (0, 0, 0, 0, 0, 1), mode='constant', value=0)  # Shape: [B, H, W, 3]
+        valid_right = torch.nn.functional.pad(valid_right, (0, 1), mode='constant', value=False)  # Shape: [B, H, W]
+        valid_down = torch.nn.functional.pad(valid_down, (0, 0, 0, 1), mode='constant', value=False)  # Shape: [B, H, W]
+
+        # Compute cross product: normal = vec_right x vec_down
+        normals = torch.cross(vec_right, vec_down, dim=-1)  # Shape: [B, H, W, 3]
+
+        # Normalize normals to unit vectors
+        norm = torch.norm(normals, dim=-1, keepdim=True)
+        normals = normals / torch.clamp(norm, min=1e-8)  # Avoid division by zero
+
+        # Valid normals require valid pixel and both neighbors
+        valid_normals = valid_mask & valid_right & valid_down
+
+        # Set normals to zero for invalid pixels
+        normals = normals * valid_normals.unsqueeze(-1)
+
+        return normals, valid_normals
+
+    def point_to_ray_dist(self, X, jacobian=False):
+        b = X.shape[:-1]
+
+        def point_to_dist(X):
+            d = torch.linalg.norm(X, dim=-1, keepdim=True)
+            return d
+
+        d = point_to_dist(X)
+        d_inv = 1.0 / d
+        r = d_inv * X
+        rd = torch.cat((r, d), dim=-1)  # Dim 4
+        if not jacobian:
+            return rd
+        else:
+            d_inv_2 = d_inv ** 2
+            I = torch.eye(3, device=X.device, dtype=X.dtype).repeat(*b, 1, 1)
+            dr_dX = d_inv.unsqueeze(-1) * (
+                    I - d_inv_2.unsqueeze(-1) * (X.unsqueeze(-1) @ X.unsqueeze(-2))
+            )
+            dd_dX = r.unsqueeze(-2)
+            drd_dX = torch.cat((dr_dX, dd_dX), dim=-2)
+            return rd, drd_dX
+
+    def act_Sim3(self, X: lietorch.Sim3, pC: torch.Tensor, jacobian=False):
+        pW = X.act(pC)
+        if not jacobian:
+            return pW
+        dpC_dt = torch.eye(3, device=pW.device).repeat(*pW.shape[:-1], 1, 1)
+        dpC_dR = -skew_sym(pW)
+        dpc_ds = pW.reshape(*pW.shape[:-1], -1, 1)
+        return pW, torch.cat([dpC_dt, dpC_dR, dpc_ds], dim=-1)  # view(-1, mdim)
+
+    def solve(self, sqrt_info, r, J):
+        whitened_r = sqrt_info * r
+
+        def huber(r, k=1.345):
+            unit = torch.ones((1), dtype=r.dtype, device=r.device)
+            r_abs = torch.abs(r)
+            mask = r_abs < k
+            w = torch.where(mask, unit, k / r_abs)
+            return w
+
+        robust_sqrt_info = sqrt_info * torch.sqrt(
+            huber(whitened_r, k=self.cfg["huber"])
+        )
+        mdim = J.shape[-1]
+        A = (robust_sqrt_info[..., None] * J).view(-1, mdim)  # dr_dX
+        b = (robust_sqrt_info * r).view(-1, 1)  # z-h
+        H = A.T @ A
+        g = -A.T @ b
+        cost = 0.5 * (b.T @ b).item()
+
+        # L = torch.linalg.cholesky(H, upper=False)
+        # tau_j = torch.cholesky_solve(g, L, upper=False).view(1, -1)
+
+        try:
+            L = torch.linalg.cholesky(H, upper=False)
+            tau_j = torch.cholesky_solve(g, L, upper=False).view(1, -1)
+        except RuntimeError as e:
+            # Fallback: Add damping (Levenberg-Marquardt style) or use torch.linalg.solve
+            damping = 1e-6 * torch.eye(H.shape[0], device=H.device)
+            H_damped = H + damping
+            try:
+                L = torch.linalg.cholesky(H_damped, upper=False)
+                tau_j = torch.cholesky_solve(g, L, upper=False).view(1, -1)
+            except RuntimeError:
+                # Final fallback: Use torch.linalg.solve
+                tau_j = torch.linalg.solve(H_damped, g).view(1, -1)
+                print(f"Warning: Cholesky failed, used damped linear solve. Error: {str(e)}")
+
+        return tau_j, cost
+
+    def check_convergence(self, step, rel_error, delta_norm, old_cost, new_cost, delta):
+        """
+        Check convergence of optimization for batched inputs.
+        """
+        if step > 0 and torch.all(torch.abs(old_cost - new_cost) < rel_error):
+            return True
+        if torch.all(torch.norm(delta, dim=1) < delta_norm):
+            return True
+        return False
+
+    def optimize_camera_pose(self, pts3d1, pts3d2, conf1, conf2, conf_thresh=1.0, cfg=None):
+        """
+        Optimize the relative pose between two cameras using 3D points for batched inputs.
+        Args:
+            pts3d1: torch.Tensor of shape [B, H, W, 3], 3D points in camera 1 frame
+            pts3d2: torch.Tensor of shape [B, H, W, 3], 3D points in camera 2 frame
+            conf1: torch.Tensor of shape [B, H, W], confidence scores for pts3d1
+            conf2: torch.Tensor of shape [B, H, W], confidence scores for pts3d2
+            conf_thresh: float, confidence threshold
+            cfg: dict, configuration parameters
+        Returns:
+            T_WC1: torch.Tensor of shape [B, 4, 4], optimized pose of camera 1
+            T_C2C1: torch.Tensor of shape [B, 4, 4], optimized relative pose
+        """
+        B, H, W, _ = pts3d1.shape
+        pts3d1 = pts3d1.view(B, -1, 3)  # [B, H*W, 3]
+        pts3d2 = pts3d2.view(B, -1, 3)  # [B, H*W, 3]
+        conf1 = conf1.view(B, -1)  # [B, H*W]
+        conf2 = conf2.view(B, -1)  # [B, H*W]
+
+        if cfg is None:
+            cfg = {
+                "sigma_ray": 0.003,
+                "sigma_dist": 1,
+                "max_iters": 50,
+                "rel_error": 1e-3,
+                "delta_norm": 1e-3
+            }
+
+        # Filter points based on confidence
+        valid1 = conf1 > conf_thresh
+        valid2 = conf2 > conf_thresh
+        valid_opt = valid1 & valid2
+
+        # Apply mask to points and confidences
+        B, N = pts3d1.shape[:2]
+        pts3d1 = pts3d1 * valid_opt[:, :, None]
+        pts3d2 = pts3d2 * valid_opt[:, :, None]
+        conf = torch.min(conf1, conf2) * valid_opt
+
+        # each batch is one OK:
+        T_WC1_list = []
+        T_C2C1_list = []
+        for i in range(B):
+            last_error = 0
+            T_WC1 = lietorch.Sim3.Identity(1, device=pts3d1.device)
+            T_WC2 = lietorch.Sim3.Identity(1, device=pts3d1.device)
+            T_C2C1 = lietorch.Sim3.Identity(1, device=pts3d1.device)
+            # T_WC1 = torch.eye(4, device=pts3d1.device).unsqueeze(0).expand(B, 4, 4)
+            # T_WC2 = torch.eye(4, device=pts3d1.device).unsqueeze(0).expand(B, 4, 4)
+            # T_C2C1 = torch.eye(4, device=pts3d1.device).unsqueeze(0).expand(B, 4, 4)
+
+            # Initialize information weights
+            sqrt_info_ray = 1 / cfg["sigma_ray"] * valid_opt * torch.sqrt(conf)
+            sqrt_info_dist = 1 / cfg["sigma_dist"] * valid_opt * torch.sqrt(conf)
+            sqrt_info = torch.cat((sqrt_info_ray.unsqueeze(-1).repeat(1, 1, 3), sqrt_info_dist.unsqueeze(-1)), dim=2)
+
+            # Precalculate ray distances for camera 2
+            rd_2, _ = self.point_to_ray_dist(pts3d2[i], jacobian=False)
+
+            old_cost = torch.full((B,), float("inf"), device=pts3d1.device)
+            for step in range(cfg["max_iters"]):
+                # Transform points from camera 1 to camera 2
+                pts1_C2, dpts1_C2_dT_C2C1 = self.act_SE3(T_C2C1, pts3d1[i], jacobian=True)
+                rd_1_C2, drd_1_C2_dpts1_C2 = self.point_to_ray_dist(pts1_C2, jacobian=True)
+
+                # Compute residuals
+                residuals = rd_2 - rd_1_C2
+
+                # Compute Jacobian
+                J = -drd_1_C2_dpts1_C2 @ dpts1_C2_dT_C2C1
+
+                # Solve for update
+                tau_ij_sim3, new_cost = self.solve(sqrt_info, residuals, J)
+                T_C2C1 = T_C2C1.retr(tau_ij_sim3)
+                T_C2C1_list.append(T_C2C1)
+
+                if check_convergence(
+                        step,
+                        self.cfg["rel_error"],
+                        self.cfg["delta_norm"],
+                        old_cost,
+                        new_cost,
+                        tau_ij_sim3,
+                ):
+                    break
+                old_cost = new_cost
+
+                if step == self.cfg["max_iters"] - 1:
+                    print(f"max iters reached {last_error}")
+
+            T_WC1 = T_WC2 @ T_C2C1
+            T_WC1_list.append(T_WC1)
+
+        T_WC1_list = torch.tensor(T_WC1_list)
+        T_C2C1_list = torch.tensor(T_C2C1_list)
+        return T_WC1_list, T_C2C1
+
+
+    def compute_loss(self, gt1, gt2, pred1, pred2, **kw):
+        """Compute loss between rendered and ground truth depth maps."""
+        # Extract ground truth and predicted 3D points
+        gt_img1 = gt1['img'] # B, 3, H, w
+        gt_img2 = gt2['img'] # B, 3, H, W
+
+        pred_albedo1 = pred1['albedo']
+        pred_albedo2 = pred2['albedo']
+
+        pred_specular1 = pred1['specular']
+        pred_specular2 = pred2['specular']
+
+        pred1_pts3d = pred1['pts3d']
+        pred2_pts3d = pred2['pts3d_in_other_view']
+
+        pred_depth1 = pred1_pts3d[:, :, :, -1]
+        pred_depth2 = pred2_pts3d[:, :, :, -1]
+
+        conf1 = pred1['conf']
+        conf2 = pred2['conf']
+
+        Q1 = pred1['desc_conf']
+        Q2 = pred2['desc_conf']
+
+        ##---------------diffuse Term-----------------##
+        # calculate normal vector
+
+        valid_mask1 = gt1['valid_mask']
+        valid_mask2 = gt2['valid_mask']
+
+        n1_vec, valid_n1 = self.compute_pixel_normals(pred1_pts3d, valid_mask1)
+        n2_vec, valid_n2 = self.compute_pixel_normals(pred2_pts3d, valid_mask2)
+
+        # calculate light vector: need camera pose
+        T_WC1, T_C2C1 = self.optimize_camera_pose(pred1_pts3d, pred2_pts3d, conf1, conf2)
+        T_WC2 = T_WC1 * torch.linalg.inv(T_C2C1)
+        l1_vec = T_WC1[:3, 3]/torch.linalg.norm(T_WC1[:3, 3])
+        l2_vec = T_WC2[:3, 3]/torch.linalg.norm(T_WC2[:3, 3])
+
+        # diffuse term
+        cos_theta1 = torch.dot(n1_vec, l1_vec)
+        cos_theta2 = torch.dot(n2_vec, l2_vec)
+        Ld1 = pred_albedo1 * 1.0 / (pred_depth1**2) * cos_theta1
+        Ld2 = pred_albedo2 * 1.0 / (pred_depth2**2) * cos_theta2
+
+        ##---------------specular term----------------##
+        Ls1 = pred_specular1 * 1.0 / (pred_depth1**2)
+        Ls2 = pred_specular2 * 1.0 / (pred_depth2**2)
+
+        ##---------------rendering RGB----------------##
+        color1 = Ld1 + Ls1
+        color2 = Ld2 + Ls2
+
+        ##--------------compute loss------------------##
+
+        # gt_pts1 = gt1['pts3d']  # Shape: (B, H, W, 3)
+        # gt_pts2 = gt2['pts3d']
+        # pr_pts1 = get_pred_pts3d(gt1, pred1, use_pose=False)
+        # pr_pts2 = get_pred_pts3d(gt2, pred2, use_pose=True)
+        #
+        # # Extract camera intrinsics and validity masks
+        # camera_intrinsics1 = gt1['camera_intrinsics']  # Shape: (B, 3, 3)
+        # camera_intrinsics2 = gt2['camera_intrinsics']
+        # valid1 = gt1['valid_mask'].clone()
+        # valid2 = gt2['valid_mask'].clone()
+        #
+        # # Render depth maps
+        # pr_depth1, valid1 = self.render_depth_map(pr_pts1, camera_intrinsics1, valid1)
+        # pr_depth2, valid2 = self.render_depth_map(pr_pts2, camera_intrinsics2, valid2)
+        # gt_depth1, valid1 = self.render_depth_map(gt_pts1, camera_intrinsics1, valid1)
+        # gt_depth2, valid2 = self.render_depth_map(gt_pts2, camera_intrinsics2, valid2)
+
+        # Compute loss for each view
+        loss1 = self.criterion(color1, gt_img1)
+        loss2 = self.criterion(color2, gt_img2)
+
+        valid1 = valid_n1 & valid_mask1
+        valid2 = valid_n2 & valid_mask2
+        # Combine losses using Sum
+        details = {
+            f'{type(self).__name__}_depth_1': float(loss1.mean()),
+            f'{type(self).__name__}_depth_2': float(loss2.mean())
+        }
+        return Sum((loss1, valid1), (loss2, valid2)), details
 
 
 class ConfMatchingLoss(ConfLoss):
