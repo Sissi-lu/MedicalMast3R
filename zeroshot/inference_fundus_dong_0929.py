@@ -56,11 +56,11 @@ def parse_args():
     # where the checkpoints is
     parser.add_argument('--base-dir', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalMast3R/',
                         help="project location")
-    parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/fundusdong_new_0717_embed_decoder_encoder/checkpoint-best.pth')
+    parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/fundusdong_mast3r_1001_head_half_decoder/checkpoint-best.pth')
     # where the endoscope is
     parser.add_argument('--input-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth/final_version_processed')
     # parser.add_argument('--input-data', type=str, help='cutting_tissues_twice or pulling_soft_tissues', default='cutting_tissues_twice')
-    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MASt3R_0930_finetune_w_qualitative')
+    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MASt3R_1001_finetune_w_qualitative_head_half_decoder')
     parser.add_argument('--device', type=str, default='cuda')
     # parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/eyetube_phase4_results/anterior/23_Gauge_Plaque_Dissection_of_Anterior_Persistent_Fetal_Vasculature_in_a_2_week_old_Boy/dataset0/dust3r/')
     # parser.add_argument('--model-name', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalDust3R/naver/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth')
@@ -240,16 +240,19 @@ def load_data_path(img_path):
     right_img = img_path.replace('left', 'right')
 
     ###################### metric depth ##########################
-    # left_depth = left_img.replace("imgs", "metric_depth").replace("png", "npy")
-    # right_depth = right_img.replace("imgs", "metric_depth").replace("png", "npy")
-    # l_depth = np.load(left_depth)
-    # r_depth = np.load(right_depth)
+    left_depth = left_img.replace("imgs", "metric_depth").replace("png", "npy")
+    right_depth = right_img.replace("imgs", "metric_depth").replace("png", "npy")
+    l_depth = np.load(left_depth)
+    r_depth = np.load(right_depth)
 
     ###################### relative depth ##########################
-    left_depth = left_img.replace("imgs", "depth")
-    right_depth = right_img.replace("imgs", "depth")
-    l_depth = cv2.imread(left_depth, cv2.IMREAD_GRAYSCALE)
-    r_depth = cv2.imread(right_depth, cv2.IMREAD_GRAYSCALE)
+    # left_depth = left_img.replace("imgs", "depth")
+    # right_depth = right_img.replace("imgs", "depth")
+    # l_depth = cv2.imread(left_depth, cv2.IMREAD_GRAYSCALE)
+    # r_depth = cv2.imread(right_depth, cv2.IMREAD_GRAYSCALE)
+
+
+
     # right_depth = right_img.replace("img", "depth")
     assert os.path.exists(left_depth)
 
@@ -545,8 +548,11 @@ def endoscope_evaluation(args):
             pred_depth[pred_depth > max_depth] = max_depth
 
             # 计算缩放比例并应用
-            ratio = np.median(gt_depth) / (np.median(pred_depth) + 1e-5)
-            pred_depth *= ratio
+            # ratio = np.median(gt_depth) / (np.median(pred_depth) + 1e-5)
+            # pred_depth *= ratio
+            gt_depth, pred_depth = scale_shift_invariant(pred_depth, gt_depth)
+            pred_depth = (pred_depth - pred_depth.min()) / (pred_depth.max() - pred_depth.min())
+            gt_depth = (gt_depth - gt_depth.min()) / (gt_depth.max() - gt_depth.min())
 
             # 创建与原始形状相同的零数组
             pred_image = np.zeros(original_shape, dtype=pred_depth.dtype)
