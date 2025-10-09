@@ -27,7 +27,7 @@ from dust3r.utils.image import load_images
 from dust3r.utils.device import to_numpy
 from dust3r.viz import add_scene_cam, CAM_COLORS, OPENGL, pts3d_to_trimesh, cat_meshes
 from dust3r.demo import get_args_parser as dust3r_get_args_parser
-
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 import matplotlib.pyplot as pl
 
 

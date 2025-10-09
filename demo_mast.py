@@ -36,7 +36,7 @@ from dust3r.utils.geometry import find_reciprocal_matches, xy_grid
 from mast3r.demo import _convert_scene_output_to_glb, main_demo
 
 
-# os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 import matplotlib.pyplot as pl
 pl.ion()

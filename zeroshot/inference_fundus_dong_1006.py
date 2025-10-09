@@ -34,7 +34,7 @@ from croco.utils.misc import NativeScalerWithGradNormCount as NativeScaler  # no
 import torch
 import shutil
 
-from mast3r.demo import _convert_scene_output_to_glb, main_demo
+from mast3r.demo import _convert_scene_output_to_glb, main_demo, SparseGAState, get_3D_model_from_scene
 from mast3r.model import AsymmetricMASt3R
 from mast3r.utils.misc import hash_md5
 from mast3r.cloud_opt.sparse_ga import sparse_global_alignment
@@ -56,15 +56,15 @@ def parse_args():
     # where the checkpoints is
     parser.add_argument('--base-dir', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalMast3R/',
                         help="project location")
-    parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/fundusdong_mast3r_1002_embed_head_decoder_true_dataset_test=2000/checkpoint-best.pth')
+    # parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/fundusdong_mast3r_1002_embed_head_decoder_true_dataset_test=2000/checkpoint-best.pth')
     # where the endoscope is
     parser.add_argument('--input-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth/final_version_processed')
     # parser.add_argument('--input-data', type=str, help='cutting_tissues_twice or pulling_soft_tissues', default='cutting_tissues_twice')
-    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MASt3R_1002_finetune_w_qualitative_embed_head_decoder_true_dataset')
-    # parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MASt3R_1002_zeroshot')
+    # parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MASt3R_1006_finetune_w_qualitative_embed_head_decoder_true_dataset')
+    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MASt3R_1006_zeroshot')
     parser.add_argument('--device', type=str, default='cuda')
     # parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/eyetube_phase4_results/anterior/23_Gauge_Plaque_Dissection_of_Anterior_Persistent_Fetal_Vasculature_in_a_2_week_old_Boy/dataset0/dust3r/')
-    # parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/naver/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth')
+    parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/naver/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth')
     return parser.parse_args()
 
 
@@ -96,32 +96,7 @@ def online_showing(scene):
 
     return
 
-def get_3D_model_from_scene(save_folder, silent, scene_state, min_conf_thr=2, as_pointcloud=False, mask_sky=False,
-                            clean_depth=False, transparent_cams=False, cam_size=0.05, TSDF_thresh=0):
-    """
-    extract 3D_model (glb file) from a reconstructed scene
-    """
-    if scene_state is None:
-        return None
-    outfile = scene_state.outfile_name
-    if outfile is None:
-        return None
 
-    # get optimized values from scene
-    scene = scene_state.sparse_ga
-    rgbimg = scene.imgs
-    focals = scene.get_focals().cpu()
-    cams2world = scene.get_im_poses().cpu()
-
-    # 3D pointcloud from depthmap, poses and intrinsics
-    if TSDF_thresh > 0:
-        tsdf = TSDFPostProcess(scene, TSDF_thresh=TSDF_thresh)
-        pts3d, _, confs = to_numpy(tsdf.get_dense_pts3d(clean_depth=clean_depth))
-    else:
-        pts3d, _, confs = to_numpy(scene.get_dense_pts3d(clean_depth=clean_depth))
-    msk = to_numpy([c > min_conf_thr for c in confs])
-    return _convert_scene_output_to_glb(outfile, rgbimg, pts3d, msk, focals, cams2world, as_pointcloud=as_pointcloud,
-                                        transparent_cams=transparent_cams, cam_size=cam_size, silent=silent)
 
 def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
     pts3d, depthmaps, confs = scene.get_dense_pts3d(clean_depth=clean_depth)
@@ -129,7 +104,7 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
     pts3d[1] = pts3d[1].view(confs[1].shape[0], confs[1].shape[1], -1)
 
     # scene.pts3d = pts3d
-    scene.depthmaps = depthmaps
+    # scene.depthmaps = depthmaps
 
     # poses = scene.save_tum_poses(f'{save_folder}/pred_traj.txt')
     # K = scene.save_intrinsics(f'{save_folder}/pred_intrinsics.txt')
@@ -139,7 +114,8 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
     confidence_masks = to_numpy([c > min_conf_thr for c in confs])
 
     rgbimg = scene.imgs
-    depths = to_numpy(scene.get_depthmaps())
+    # depths = to_numpy(scene.get_depthmaps())
+    depths = to_numpy(scene.depthmaps)
     confs = to_numpy([c for c in confs])
 
     from matplotlib import pyplot as pl
@@ -158,6 +134,8 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
         depth_imgs.append(rgb(depths[i]))
         confs_imgs.append(rgb(new_confs[i]))
 
+    # plt.imshow(depth_imgs[0].reshape(384, 512), cmap='jet')
+    # plt.savefig(os.path.join(save_folder, 'depth.png'))
 
     # np.save(os.path.join(save_folder, "rgb.npy"), rgb_imgs)
     # np.save(os.path.join(save_folder, "rgb_depth.npy"), depth_imgs)
@@ -281,33 +259,34 @@ def load_data_path(img_path):
 
 # def draw_comparison(left_img, left_depth, right_img, right_depth, pred_left, pred_right)
 
-class SparseGAState():
-    def __init__(self, sparse_ga, should_delete=False, cache_dir=None, outfile_name=None):
-        self.sparse_ga = sparse_ga
-        self.cache_dir = cache_dir
-        self.outfile_name = outfile_name
-        self.should_delete = should_delete
-
-    def __del__(self):
-        if not self.should_delete:
-            return
-        if self.cache_dir is not None and os.path.isdir(self.cache_dir):
-            shutil.rmtree(self.cache_dir)
-        self.cache_dir = None
-        if self.outfile_name is not None and os.path.isfile(self.outfile_name):
-            os.remove(self.outfile_name)
-        self.outfile_name = None
+# class SparseGAState:
+#     def __init__(self, sparse_ga, should_delete=False, cache_dir=None, outfile_name=None):
+#         self.sparse_ga = sparse_ga
+#         self.cache_dir = cache_dir
+#         self.outfile_name = outfile_name
+#         self.should_delete = should_delete
+#
+#     def __del__(self):
+#         if not self.should_delete:
+#             return
+#         if self.cache_dir is not None and os.path.isdir(self.cache_dir):
+#             shutil.rmtree(self.cache_dir)
+#         self.cache_dir = None
+#         if self.outfile_name is not None and os.path.isfile(self.outfile_name):
+#             os.remove(self.outfile_name)
+#         self.outfile_name = None
 
 
 def predict_depth(save_folder, left_img, right_img, device, model, name):
     # parameters
     current_scene_state = None
     optim_level = "refine"  # choice=["coarse", "refine", "refine+depth"]
+    # optim_level = "refine+depth"
     lr1 = 0.07  # Coarese minimum 0.01-0.2
-    niter1 = 500  # num_iterations
-    lr2 = 0.008  # Fine LR:0.005-0.05
-    niter2 = 500  # num_iterations
-    min_conf_thr = 0.15  # adjust the confidence threshold0.0-10
+    niter1 = 300  # num_iterations
+    lr2 = 0.01  # Fine LR:0.005-0.05
+    niter2 = 300  # num_iterations
+    min_conf_thr = 1.5  # adjust the confidence threshold0.0-10
     as_pointcloud = True
     mask_sky = False
     clean_depth = True
@@ -315,7 +294,7 @@ def predict_depth(save_folder, left_img, right_img, device, model, name):
     cam_size = 0.2  # adjust the camera size in the output point cloud: 0.001-1
     scenegraph_type = "complete"
     silent = False
-    matching_conf_thr = 5 # Matching confidence Thr
+    matching_conf_thr = 0 # Matching confidence Thr
     subsample = 1
 
     # [("complete: all possible image pairs", "complete"),
@@ -337,10 +316,7 @@ def predict_depth(save_folder, left_img, right_img, device, model, name):
         scene_graph_params.append('noncyclic')
     scene_graph = '-'.join(scene_graph_params)
 
-    batch_size = 1
-    schedule = 'cosine'
-    lr = 0.0001
-    niter = 500
+
     filelist = [left_img, right_img]
     images = load_images([left_img, right_img], size=512)
     # images = load_images(['croco/assets/Chateau1.png', 'croco/assets/Chateau1.png'], size=512)
@@ -349,18 +325,17 @@ def predict_depth(save_folder, left_img, right_img, device, model, name):
     if optim_level == 'coarse':
         niter2 = 0
 
-
     cache_dir = save_folder
     os.makedirs(cache_dir, exist_ok=True)
     scene = sparse_global_alignment(filelist, pairs, cache_dir,
                                     model, subsample=1, lr1=lr1, niter1=niter1, lr2=lr2, niter2=niter2, device=device,
                                     opt_depth='depth' in optim_level, shared_intrinsics=shared_intrinsics,
-                                    matching_conf_thr=matching_conf_thr)
+                                    matching_conf_thr=matching_conf_thr, )
 
     outfile_name = os.path.join(save_folder, name+"_scene.glb")
 
     scene_state = SparseGAState(scene, False, cache_dir, outfile_name)
-    outfile = get_3D_model_from_scene(save_folder, silent, scene_state, min_conf_thr, as_pointcloud, mask_sky,
+    outfile = get_3D_model_from_scene(silent, scene_state, min_conf_thr, as_pointcloud, mask_sky,
                                       clean_depth, transparent_cams, cam_size, TSDF_thresh)
 
     # pts3d, depthmaps, confs = scene.get_dense_pts3d(clean_depth=clean_depth)
@@ -369,9 +344,10 @@ def predict_depth(save_folder, left_img, right_img, device, model, name):
 
     rgb_imgs, depth_imgs, confs_imgs = save_prediction_results(save_folder, scene_state.sparse_ga, clean_depth, min_conf_thr)
 
-    depths = scene_state.sparse_ga.get_depthmaps()
-    pred_left, pred_right = depths[0].detach().cpu().numpy(), depths[1].detach().cpu().numpy()
 
+    depths = scene_state.sparse_ga.get_depthmaps()
+    # pred_left, pred_right = depths[0].detach().cpu().numpy(), depths[1].detach().cpu().numpy()
+    pred_left, pred_right = depth_imgs[0]*255, depth_imgs[1] *255
     return pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs
 
 
@@ -431,6 +407,7 @@ def resize_resolution(pred, target):
     if not pred.shape == target.shape:
     # enlarge
         o_h, o_w = target.shape[:2]
+        pred = pred.reshape(384, 512)
         pred = cv2.resize(pred, (o_w, o_h), interpolation=cv2.INTER_LANCZOS4)
         # pred_resized = cv2.GaussianBlur(pred, (5, 5), sigmaX=1.0)
     # reduce
@@ -515,8 +492,12 @@ def endoscope_evaluation(args):
         except:
             print('[ERROR] {}'.format(img_name))
             continue
+        # pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs = predict_depth(save_folder, left_img, right_img, device=args.device, model=model, name=img_name)
 
         pred_left = resize_resolution(pred_left, left_depth)
+
+        plt.imshow(pred_left, cmap='jet')
+        plt.savefig(os.path.join(save_folder, 'depth.png'))
         # left_depth = resize_resolution()
         pred_right = resize_resolution(pred_right, right_depth)
 

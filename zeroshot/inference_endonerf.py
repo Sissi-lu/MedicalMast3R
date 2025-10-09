@@ -47,6 +47,7 @@ import mast3r.utils.path_to_dust3r  # noqa
 # print("Device count:", torch.cuda.device_count())
 # print("Current device:", torch.cuda.current_device())
 # print("Device name:", torch.cuda.get_device_name(torch.cuda.current_device()))
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def parse_args():
     parser = argparse.ArgumentParser()
