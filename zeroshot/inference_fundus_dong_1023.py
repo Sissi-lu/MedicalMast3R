@@ -4,10 +4,10 @@ import sys
 import os
 import matplotlib
 from PIL import Image
-
+from scipy.ndimage import median_filter
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../dust3r')))
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 from dust3r.inference import inference
 from dust3r.model import AsymmetricCroCo3DStereo
@@ -41,6 +41,7 @@ from mast3r.cloud_opt.sparse_ga import sparse_global_alignment
 from mast3r.cloud_opt.tsdf_optimizer import TSDFPostProcess
 import torch
 import mast3r.utils.path_to_dust3r  # noqa
+from scipy.ndimage import median_filter
 # torch.cuda.set_device(4)  # Force GPU 4
 # device = torch.device("cuda:4")
 # print("Forced device:", torch.cuda.current_device())
@@ -56,18 +57,14 @@ def parse_args():
     # where the checkpoints is
     parser.add_argument('--base-dir', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalMast3R/',
                         help="project location")
-    parser.add_argument('--input-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth/eyetube/fundus/test')
-    # parser.add_argument('--input-data', type=str, help='cutting_tissues_twice or pulling_soft_tissues', default='cutting_tissues_twice')
-
-
-    ## finetune
-    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_1025_finetune')
     parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/fundusdong_mast3r_1002_embed_head_decoder_true_dataset_test=2000/checkpoint-best.pth')
-
+    # where the endoscope is
+    parser.add_argument('--input-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth/final_version_processed')
+    # parser.add_argument('--input-data', type=str, help='cutting_tissues_twice or pulling_soft_tissues', default='cutting_tissues_twice')
+    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MASt3R_1024_finetune_synthetic_modify_1')
+    # parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MASt3R_1023_synthetic_zeroshot')
     parser.add_argument('--device', type=str, default='cuda')
-
-    ## zeroshot
-    # parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_1009_zeroshot')
+    # parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/eyetube_phase4_results/anterior/23_Gauge_Plaque_Dissection_of_Anterior_Persistent_Fetal_Vasculature_in_a_2_week_old_Boy/dataset0/dust3r/')
     # parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/naver/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth')
     return parser.parse_args()
 
@@ -120,8 +117,6 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
     rgbimg = scene.imgs
     # depths = to_numpy(scene.get_depthmaps())
     depths = to_numpy(scene.depthmaps)
-    depths[0] = depths[0].reshape(confs[0].shape[0], confs[0].shape[1])
-    depths[1] = depths[1].reshape(confs[1].shape[0], confs[1].shape[1])
     confs = to_numpy([c for c in confs])
 
     from matplotlib import pyplot as pl
@@ -231,15 +226,15 @@ def load_data_path(img_path):
     # r_depth = np.load(right_depth)
 
     ###################### relative depth ##########################
-    # left_depth = left_img.replace("imgs", "depth")
-    # right_depth = right_img.replace("imgs", "depth")
-    # l_depth = cv2.imread(left_depth, cv2.IMREAD_GRAYSCALE)
-    # r_depth = cv2.imread(right_depth, cv2.IMREAD_GRAYSCALE)
+    left_depth = left_img.replace("imgs", "depth")
+    right_depth = right_img.replace("imgs", "depth")
+    l_depth = cv2.imread(left_depth, cv2.IMREAD_GRAYSCALE)
+    r_depth = cv2.imread(right_depth, cv2.IMREAD_GRAYSCALE)
 
 
 
     # right_depth = right_img.replace("img", "depth")
-    # assert os.path.exists(left_depth)
+    assert os.path.exists(left_depth)
 
     l_img = cv2.imread(left_img)
     r_img = cv2.imread(right_img)
@@ -260,7 +255,7 @@ def load_data_path(img_path):
     # plt.colorbar()
     # plt.savefig(os.path.join(save_folder, "left_and_right_rgbs.png"))
     # plt.close()
-    return left_img, right_img
+    return left_img, l_depth, right_img, r_depth
 
 
 # def draw_comparison(left_img, left_depth, right_img, right_depth, pred_left, pred_right)
@@ -357,7 +352,7 @@ def predict_depth(save_folder, left_img, right_img, device, model, name):
     return pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs
 
 
-def draw_picture(save_folder, pred_left, pred_right, img_left, img_right, name):
+def draw_picture(save_folder, pred_left, pred_right, img_left, img_right, left_depth, right_depth, name):
     # Load images (assuming these variables are defined)
     left_img = cv2.imread(img_left)
     right_img = cv2.imread(img_right)
@@ -366,54 +361,62 @@ def draw_picture(save_folder, pred_left, pred_right, img_left, img_right, name):
     plt.figure(figsize=(10, 10))  # Adjust figure size as needed
 
     # Row 1: Original images
-    plt.subplot(221)  # 3 rows, 2 columns, position 1
+    plt.subplot(321)  # 3 rows, 2 columns, position 1
     plt.imshow(cv2.cvtColor(left_img, cv2.COLOR_BGR2RGB))  # Convert BGR to RGB
     plt.title('Left Image')
     plt.axis('off')  # Optional: hide axes
 
-    plt.subplot(222)  # 3 rows, 2 columns, position 2
+    plt.subplot(322)  # 3 rows, 2 columns, position 2
     plt.imshow(cv2.cvtColor(right_img, cv2.COLOR_BGR2RGB))  # Convert BGR to RGB
     plt.title('Right Image')
     plt.axis('off')
 
     # Row 2: Ground truth depth maps
-    plt.subplot(223)  # 3 rows, 2 columns, position 3
+    plt.subplot(323)  # 3 rows, 2 columns, position 3
     plt.imshow(pred_left, cmap='jet')
     plt.title('Pred Left')
     plt.axis('off')
 
     # Row 3: Predicted depth maps
-    plt.subplot(224)  # 3 rows, 2 columns, position 5
+    plt.subplot(324)  # 3 rows, 2 columns, position 5
     plt.imshow(pred_right, cmap='jet')
     plt.title('Pred Right')
+    plt.axis('off')
+
+    # Row 2: Ground truth depth maps
+    plt.subplot(325)  # 3 rows, 2 columns, position 3
+    plt.imshow(left_depth, cmap='jet')
+    plt.title('GT Left')
+    plt.axis('off')
+
+    # Row 3: Predicted depth maps
+    plt.subplot(326)  # 3 rows, 2 columns, position 5
+    plt.imshow(right_depth, cmap='jet')
+    plt.title('GT Right')
     plt.axis('off')
 
 
     # Adjust layout and save
     plt.tight_layout()  # Prevents overlapping
     plt.show()
-    plt.savefig(os.path.join(save_folder, "comparison_figure_%s.png"%(name)), dpi=300)  # Higher DPI for better quality
+    plt.savefig(os.path.join(save_folder, name + "_comparison_figure.png"), dpi=300)  # Higher DPI for better quality
     plt.close()
     return
 
 
-# def resize_resolution(pred, target):
-#     if not pred.shape == target.shape:
-#     # enlarge
-#         o_h, o_w = target.shape[:2]
-#         pred = pred.reshape(384, 512)
-#         pred = cv2.resize(pred, (o_w, o_h), interpolation=cv2.INTER_LANCZOS4)
-#         # pred_resized = cv2.GaussianBlur(pred, (5, 5), sigmaX=1.0)
-#     # reduce
-#         # t_h, t_w = pred.shape
-#         # target = cv2.resize(target, (t_w, t_h), interpolation=cv2.INTER_AREA)
-#     return pred
-def resize_resolution(pred, shape):
-    # pred = pred.reshape(shape)
-    if not pred.shape == shape:
-        o_h, o_w = shape
+def resize_resolution(pred, target, d=3):
+    if not pred.shape == target.shape:
+    # enlarge
+        o_h, o_w = target.shape[:2]
+        pred = pred.reshape(384, 512)
+        # pred = pred[d:o_h - d, d:o_w - d]
+        pred = cv2.resize(pred, (o_w, o_h), interpolation=cv2.INTER_LINEAR)
 
-        pred = cv2.resize(pred, (o_w, o_h))
+        # pred = cv2.resize(pred, (o_w, o_h), interpolation=cv2.INTER_LINEAR)
+        # pred_resized = cv2.GaussianBlur(pred, (5, 5), sigmaX=1.0)
+    # reduce
+        # t_h, t_w = pred.shape
+        # target = cv2.resize(target, (t_w, t_h), interpolation=cv2.INTER_AREA)
     return pred
 
 
@@ -461,12 +464,14 @@ def endoscope_evaluation(args):
     # for folder_idx, folder in enumerate(folder_lists):
     header = 'folder: [{}]'.format("endonerf")
 
-    data_path = os.path.join(args.input_dir, "left")
-    img_list = sorted(os.listdir(data_path))
+    img_list = []
+    with open(os.path.join(args.input_dir, "split", "test.txt")) as file:
+        for line in file.readlines():
+            line = line.strip('\n').split(',')[0]
+            img_list.append(line)
+    img_list = [os.path.join(args.input_dir, f) for f in img_list]
 
-    img_list = [os.path.join(args.input_dir, "left", f) for f in img_list]
-
-    model_name = args.model_name
+    model_name = os.path.join(args.base_dir, args.model_name)
     assert os.path.exists(model_name), '{} does not exist'.format(model_name)
     # you can put the path to a local checkpoint in model_name if needed
     model = AsymmetricMASt3R.from_pretrained(model_name).to(device)
@@ -484,68 +489,46 @@ def endoscope_evaluation(args):
         save_folder = args.output_dir
         # os.makedirs(save_folder, exist_ok=True)
         # assert os.path.exists(img_path)
-        left_img, right_img = load_data_path(img_path)
-        img = cv2.imread(left_img)
-        img_shape = img.shape[:2]
+        left_img, left_depth, right_img, right_depth = load_data_path(img_path)
 
-        try:
-            pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs = predict_depth(save_folder, left_img, right_img, device=args.device, model=model, name=img_name)
-        except:
-            print('[ERROR] {}'.format(img_name))
-            continue
+        # try:
+        pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs = predict_depth(save_folder, left_img, right_img, device=args.device, model=model, name=img_name)
+        # except:
+        #     print('[ERROR] {}'.format(img_name))
+        #     continue
         # pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs = predict_depth(save_folder, left_img, right_img, device=args.device, model=model, name=img_name)
 
-        pred_left = resize_resolution(pred_left, img_shape)
+        pred_left = resize_resolution(pred_left, left_depth)
 
         plt.imshow(pred_left, cmap='jet')
         plt.savefig(os.path.join(save_folder, 'depth.png'))
         # left_depth = resize_resolution()
-        pred_right = resize_resolution(pred_right, img_shape)
+        pred_right = resize_resolution(pred_right, right_depth)
 
-        draw_picture(save_folder, pred_left, pred_right, left_img, right_img, img_name)
-        def reverse(depth_map):
-            result = depth_map.copy()
-            d_min = np.min(depth_map)
-            d_max = np.max(depth_map)
-            if d_max != d_min:
-                result = d_max - (depth_map - d_min)
-            else:
-                return result
-            return result
+        draw_picture(save_folder, pred_left, pred_right, left_img, right_img, left_depth, right_depth, img_name)
 
-        pred_left = reverse(pred_left)
-        lower_bound, upper_bound = np.percentile(pred_left, [5, 95])
-        clipped_depth = np.clip(pred_left, lower_bound, upper_bound)
-
-            # Step 3: Robust normalization using median and IQR
-            # median = np.median(clipped_depth)
-            # iqr = np.percentile(clipped_depth, 75) - np.percentile(clipped_depth, 25)
-            # normalized_depth = (clipped_depth - median) / (iqr + 1e-8)  # Avoid division by zero
-
-            # # Optional: Scale to [0, 1] if ground truth is normalized similarly
-        pred_left = (clipped_depth - clipped_depth.min()) / (
-                clipped_depth.max() - clipped_depth.min() + 1e-8
-        )
-
-        # pred_left = (pred_left - pred_left.min()) / (pred_left.max() - pred_left.min())
-        jet_cmap = matplotlib.cm.get_cmap('jet')
-        pred_image_rgb = jet_cmap(pred_left)[:, :, :3]  # 取 RGB 通道，忽略 alpha
-        pred_image_rgb = (pred_image_rgb * 255).astype(np.uint8)  # 转换为 [0, 255] 的 uint8 类型
-
-        # 使用 PIL 保存图像
-        pil_image = Image.fromarray(pred_image_rgb)
-        pil_image.save(os.path.join(save_folder, 'depth_%s.png' % (img_name)))
-
-        # # ---------------------------evaluation----------------------------#
-        # # ---------------------------d1, d2, d3----------------------------#
+        # ---------------------------evaluation----------------------------#
+        # ---------------------------d1, d2, d3----------------------------#
         # total_metric = dict()
-        # # for idx, (pred, gt) in enumerate(zip(pred_left, left_depth)):
-        # pred_depth = pred_left
-        # gt_depth = left_depth
-        # min_depth = 0.001
-        # max_depth = 255
+        # for idx, (pred, gt) in enumerate(zip(pred_left, left_depth)):
+
+
+        pred_depth = pred_left
+        gt_depth = left_depth
+
+        original_shape = pred_depth.shape
+        min_depth = 0.001
+        max_depth = 255
         #
-        #
+        # def reverse(depth_map):
+        #     result = depth_map.copy()
+        #     d_min = np.min(depth_map)
+        #     d_max = np.max(depth_map)
+        #     if d_max != d_min:
+        #         result = d_max - (depth_map - d_min)
+        #     else:
+        #         return result
+        #     return result
         # ##-------------------overlook_shift_and_scared_invariant--------------------#
         #
         # # 假设 eval_depth_numpy 和 total_metric 已定义
@@ -563,19 +546,22 @@ def endoscope_evaluation(args):
         #
         #     # 裁剪 pred_depth 到 [min_depth, max_depth]
         #     pred_depth = pred_depth.copy()  # 避免修改原始数据
-        #     pred_depth[pred_depth < min_depth] = min_depth
-        #     pred_depth[pred_depth > max_depth] = max_depth
+        #     # pred_depth[pred_depth < min_depth] = min_depth
+        #     # pred_depth[pred_depth > max_depth] = max_depth
         #
         #     # 计算缩放比例并应用
         #     # ratio = np.median(gt_depth) / (np.median(pred_depth) + 1e-5)
         #     # pred_depth *= ratio
-        #     gt_depth, pred_depth = scale_shift_invariant(pred_depth, gt_depth)
+        #     # gt_depth, pred_depth = scale_shift_invariant(pred_depth, gt_depth)
         #     pred_depth = (pred_depth - pred_depth.min()) / (pred_depth.max() - pred_depth.min())
         #     gt_depth = (gt_depth - gt_depth.min()) / (gt_depth.max() - gt_depth.min())
         #
+        #     pred_depth = reverse(pred_depth)
+        #     gt_depth = reverse(gt_depth)
+        #
+        #     ######## 需要mask
         #     # 创建与原始形状相同的零数组
         #     pred_image = np.zeros(original_shape, dtype=pred_depth.dtype)
-        #
         #     # 将缩放后的 pred_depth 赋值到 mask 对应的位置
         #     pred_image[mask] = pred_depth
         #
@@ -607,44 +593,135 @@ def endoscope_evaluation(args):
         #     total_metric[key] = depth_metric[key]
         #
         # metric_logger.update(**total_metric)
+
+        # mask = np.logical_and(gt_depth > min_depth, gt_depth < max_depth)
+
+        def norm(depth):
+            return (depth - depth.min()) / (depth.max() - depth.min())
+
+        def reverse(depth_map):
+            result = depth_map.copy()
+            d_min = np.min(depth_map)
+            d_max = np.max(depth_map)
+            if d_max != d_min:
+                result = d_max - (depth_map - d_min)
+            else:
+                return result
+            return result
         #
-        # # 保存 pred_image 为 jet 颜色映射的图像
-        # # 归一化 pred_image 到 [0, 1] 以用于颜色映射
+        # ######## 需要mask
+        # # 创建与原始形状相同的零数组
+        # # pred_depth = pred_depth[mask]
+        # pred_depth = reverse(pred_depth)
+        # pred_depth = norm(pred_depth)
+        # pred_image = np.zeros(original_shape, dtype=pred_depth.dtype)
+        # pred_image = pred_depth
+        # # 将缩放后的 pred_depth 赋值到 mask 对应的位置
+        # # pred_image[mask] = pred_depth
+        #
+        # # 创建与原始形状相同的零数组用于 gt_image
+        # # gt_depth = gt_depth[mask]
+        # gt_depth = reverse(gt_depth)
+        # gt_depth = norm(gt_depth)
+        # gt_image = np.zeros(original_shape, dtype=gt_depth.dtype)
+        # gt_image = gt_depth
+
+        # 将 gt_depth 赋值到 mask 对应的位置
+        # gt_image[mask] = gt_depth
+
+        # 保存 pred_image 为 jet 颜色映射的图像
+        # 归一化 pred_image 到 [0, 1] 以用于颜色映射
         # if np.max(pred_image) > 0:  # 避免除以零
         #     pred_image_normalized = (pred_image - np.min(pred_image)) / (np.max(pred_image) - np.min(pred_image))
         # else:
         #     pred_image_normalized = pred_image  # 如果全为 0，保持不变
+
+        # pred_image_normalized = pred_image  # 如果全为 0，保持不变
+
+        def preprocess_and_normalize(depth_map, lower_percentile=0, upper_percentile=80, filter_size=3):
+            # Step 1: Smooth with median filter to reduce edge artifacts
+            smoothed_depth = median_filter(depth_map, size=filter_size)
+
+            # Step 2: Clip outliers using percentiles
+            lower_bound, upper_bound = np.percentile(smoothed_depth, [lower_percentile, upper_percentile])
+            clipped_depth = np.clip(smoothed_depth, lower_bound, upper_bound)
+
+            # Step 3: Robust normalization using median and IQR
+            # median = np.median(clipped_depth)
+            # iqr = np.percentile(clipped_depth, 75) - np.percentile(clipped_depth, 25)
+            # normalized_depth = (clipped_depth - median) / (iqr + 1e-8)  # Avoid division by zero
+
+            # # Optional: Scale to [0, 1] if ground truth is normalized similarly
+            normalized_depth = (clipped_depth - clipped_depth.min()) / (
+                    clipped_depth.max() - clipped_depth.min() + 1e-8
+            )
+
+            return normalized_depth
+
+        pred_depth = reverse(pred_depth)
+        # mask = gt_depth == 0
+        # pred_image = pred_depth.copy()
+        # pred_image[mask] = 0
+        pred_image = preprocess_and_normalize(pred_depth)
+
+        # gt_valid = gt_depth[~mask].reshape(-1, 1)
+        # pred_valid = pred_depth[~mask].reshape(-1, 1)
+
+        # def align(gt, pred, eps=1e-6):
+        #     Y = gt
+        #     A = np.stack([pred, np.ones_like(pred)], axis=1)
+        #     scale, shift = np.linalg.lstsq(A, Y, rcond=None)[0]
+        #     return scale, shift
         #
-        # # 应用 jet 颜色映射
-        # jet_cmap = matplotlib.cm.get_cmap('jet')
-        # pred_image_rgb = jet_cmap(pred_image_normalized)[:, :, :3]  # 取 RGB 通道，忽略 alpha
-        # pred_image_rgb = (pred_image_rgb * 255).astype(np.uint8)  # 转换为 [0, 255] 的 uint8 类型
-        #
-        # # 使用 PIL 保存图像
-        # pil_image = Image.fromarray(pred_image_rgb)
-        # pil_image.save(os.path.join(save_folder,img_name+'_depth.png'))
-        #
-        # # 保存 gt_image 为 jet 颜色映射的图像
-        # # 归一化 gt_image 到 [0, 1] 以用于颜色映射
+        # scale, shift = align(gt_valid, pred_valid)
+        # pred_image = shift + pred_image * scale
+
+        # ratio = np.median(gt_valid) / (np.median(pred_valid) + 1e-5)
+        # pred_image = pred_image * ratio
+
+        # from sklearn.linear_model import LinearRegression
+        # model = LinearRegression().fit(gt_valid, pred_valid)
+        # scale = model.coef_[0]
+        # offset = model.intercept_
+        # pred_image = scale * pred_image + offset
+        # pred_image[mask] = 0
+        # gt_image, pred_image = scale_shift_invariant(pred_image, gt_depth)
+        pred_image_normalized = (pred_image - pred_image.min()) / (pred_image.max() - pred_image.min())
+
+        # 应用 jet 颜色映射
+        jet_cmap = matplotlib.cm.get_cmap('jet')
+        pred_image_rgb = jet_cmap(pred_image_normalized)[:, :, :3]  # 取 RGB 通道，忽略 alpha
+        pred_image_rgb = (pred_image_rgb * 255).astype(np.uint8)  # 转换为 [0, 255] 的 uint8 类型
+
+        # 使用 PIL 保存图像
+        pil_image = Image.fromarray(pred_image_rgb)
+        pil_image.save(os.path.join(save_folder,img_name+'_depth.png'))
+
+        # 保存 gt_image 为 jet 颜色映射的图像
+        # 归一化 gt_image 到 [0, 1] 以用于颜色映射
         # if np.max(gt_image) > 0:  # 避免除以零
         #     gt_image_normalized = (gt_image - np.min(gt_image)) / (np.max(gt_image) - np.min(gt_image))
         # else:
         #     gt_image_normalized = gt_image  # 如果全为 0，保持不变
-        #
-        # # 应用 jet 颜色映射
-        # gt_image_rgb = jet_cmap(gt_image_normalized)[:, :, :3]  # 取 RGB 通道，忽略 alpha
-        # gt_image_rgb = (gt_image_rgb * 255).astype(np.uint8)  # 转换为 [0, 255] 的 uint8 类型
-        #
-        # # 使用 PIL 保存 gt_image
-        # pil_image_gt = Image.fromarray(gt_image_rgb)
-        # pil_image_gt.save(os.path.join(save_folder, img_name+'_gt.png'))
-        #
-        # # txt_dir = os.path.abspath(os.path.join(save_folder, ".."))
-        # txt_dir = args.output_dir
-        # with open(os.path.join(txt_dir, "eval_results.txt"), "a") as f:
-        #     f.write("img_path: %s \n" % img_path)
-        #     f.write(str(metric_logger))
-        #     f.write("\n \n")
+
+        # gt_image_normalized = gt_image
+        # 应用 jet 颜色映射
+
+
+        gt_image = norm(gt_depth)
+        gt_image_rgb = jet_cmap(gt_image)[:, :, :3]  # 取 RGB 通道，忽略 alpha
+        gt_image_rgb = (gt_image_rgb * 255).astype(np.uint8)  # 转换为 [0, 255] 的 uint8 类型
+
+        # 使用 PIL 保存 gt_image
+        pil_image_gt = Image.fromarray(gt_image_rgb)
+        pil_image_gt.save(os.path.join(save_folder, img_name+'_gt.png'))
+
+        # txt_dir = os.path.abspath(os.path.join(save_folder, ".."))
+        txt_dir = args.output_dir
+        with open(os.path.join(txt_dir, "eval_results.txt"), "a") as f:
+            f.write("img_path: %s \n" % img_path)
+            f.write(str(metric_logger))
+            f.write("\n \n")
 
 if __name__ == "__main__":
     args = parse_args()

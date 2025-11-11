@@ -1,4 +1,3 @@
-# Usage: if you have a model with a pth, and you want to inference within it, you can use this file.
 import argparse
 import sys
 import os
@@ -7,7 +6,7 @@ from PIL import Image
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../dust3r')))
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 from dust3r.inference import inference
 from dust3r.model import AsymmetricCroCo3DStereo
@@ -50,7 +49,6 @@ import mast3r.utils.path_to_dust3r  # noqa
 # print("Device count:", torch.cuda.device_count())
 # print("Current device:", torch.cuda.current_device())
 # print("Device name:", torch.cuda.get_device_name(torch.cuda.current_device()))
-
 def parse_args():
     parser = argparse.ArgumentParser()
     # where the checkpoints is
@@ -60,11 +58,10 @@ def parse_args():
     # where the endoscope is
     parser.add_argument('--input-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth/final_version_processed')
     # parser.add_argument('--input-data', type=str, help='cutting_tissues_twice or pulling_soft_tissues', default='cutting_tissues_twice')
-    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MASt3R_1023_finetune_w_qualitative_synthetic')
-    # parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MASt3R_1023_synthetic_zeroshot')
+    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MAst3R_seg_1111_scaled_70')
     parser.add_argument('--device', type=str, default='cuda')
     # parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/eyetube_phase4_results/anterior/23_Gauge_Plaque_Dissection_of_Anterior_Persistent_Fetal_Vasculature_in_a_2_week_old_Boy/dataset0/dust3r/')
-    # parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/naver/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth')
+    # parser.add_argument('--model-name', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalDust3R/naver/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth')
     return parser.parse_args()
 
 
@@ -96,7 +93,32 @@ def online_showing(scene):
 
     return
 
-
+# def get_3D_model_from_scene(save_folder, silent, scene_state, min_conf_thr=2, as_pointcloud=False, mask_sky=False,
+#                             clean_depth=False, transparent_cams=False, cam_size=0.05, TSDF_thresh=0):
+#     """
+#     extract 3D_model (glb file) from a reconstructed scene
+#     """
+#     if scene_state is None:
+#         return None
+#     outfile = scene_state.outfile_name
+#     if outfile is None:
+#         return None
+#
+#     # get optimized values from scene
+#     scene = scene_state.sparse_ga
+#     rgbimg = scene.imgs
+#     focals = scene.get_focals().cpu()
+#     cams2world = scene.get_im_poses().cpu()
+#
+#     # 3D pointcloud from depthmap, poses and intrinsics
+#     if TSDF_thresh > 0:
+#         tsdf = TSDFPostProcess(scene, TSDF_thresh=TSDF_thresh)
+#         pts3d, _, confs = to_numpy(tsdf.get_dense_pts3d(clean_depth=clean_depth))
+#     else:
+#         pts3d, _, confs = to_numpy(scene.get_dense_pts3d(clean_depth=clean_depth))
+#     msk = to_numpy([c > min_conf_thr for c in confs])
+#     return _convert_scene_output_to_glb(outfile, rgbimg, pts3d, msk, focals, cams2world, as_pointcloud=as_pointcloud,
+#                                         transparent_cams=transparent_cams, cam_size=cam_size, silent=silent)
 
 def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
     pts3d, depthmaps, confs = scene.get_dense_pts3d(clean_depth=clean_depth)
@@ -104,7 +126,7 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
     pts3d[1] = pts3d[1].view(confs[1].shape[0], confs[1].shape[1], -1)
 
     # scene.pts3d = pts3d
-    # scene.depthmaps = depthmaps
+    scene.depthmaps = depthmaps
 
     # poses = scene.save_tum_poses(f'{save_folder}/pred_traj.txt')
     # K = scene.save_intrinsics(f'{save_folder}/pred_intrinsics.txt')
@@ -114,8 +136,7 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
     confidence_masks = to_numpy([c > min_conf_thr for c in confs])
 
     rgbimg = scene.imgs
-    # depths = to_numpy(scene.get_depthmaps())
-    depths = to_numpy(scene.depthmaps)
+    depths = to_numpy(scene.get_depthmaps())
     confs = to_numpy([c for c in confs])
 
     from matplotlib import pyplot as pl
@@ -134,14 +155,12 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
         depth_imgs.append(rgb(depths[i]))
         confs_imgs.append(rgb(new_confs[i]))
 
-    # plt.imshow(depth_imgs[0].reshape(384, 512), cmap='jet')
-    # plt.savefig(os.path.join(save_folder, 'depth.png'))
 
     # np.save(os.path.join(save_folder, "rgb.npy"), rgb_imgs)
     # np.save(os.path.join(save_folder, "rgb_depth.npy"), depth_imgs)
     # np.save(os.path.join(save_folder, "confs.npy"), confs_imgs)
-
-    # ----------------find 2D-2D matches between the two images------------#
+    #
+    # # ----------------find 2D-2D matches between the two images------------#
     # from dust3r.utils.geometry import find_reciprocal_matches, xy_grid
     # pts2d_list, pts3d_list = [], []
     # imgs = scene.imgs
@@ -190,48 +209,12 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
 
 
 def load_data_path(img_path):
-    ##
-    # img_path = img_path.replace("data_new", "data")
-    # if data_name.split('_')[0] == "abs":
-    #     left_img = os.path.join(img_path, "imgL.png")
-    #     right_img = os.path.join(img_path, "imgR.png")
-    #
-    #     left_depth = left_img.replace("img", "depth")
-    #     right_depth = right_img.replace("img", "depth")
-    # elif data_name.split('_')[0] == "scared":
-    #     left_img = os.path.join(img_path, "Left_Image.png")
-    #     right_img = os.path.join(img_path, "Right_Image.png")
-    #
-    #     left_depth = left_img.replace("Left_Image", "depthmap_left")
-    #     right_depth = right_img.replace("Right_Image", "depthmap_right")
-    # elif data_name.split('_')[0] == "servct":
-    #
-    #     data_root = "/data_new/luxiaoxi/dataset/medical_depth/SERV-CT_preprocessed"
-    #     # data_root = "/data/luxiaoxi/dataset/medical_depth/SERV-CT_preprocessed"
-    #
-    #     left_img = os.path.join(data_root, "left", img_path)
-    #     right_img = os.path.join(data_root, "right", img_path)
-    #
-    #     left_depth = left_img.replace("left", "depthL")
-    #     right_depth = right_img.replace("right", "depthR")
-    # elif data_name.split('_')[0] == "fundus":
+
     left_img = img_path
     right_img = img_path.replace('left', 'right')
 
-    ###################### metric depth ##########################
     left_depth = left_img.replace("imgs", "metric_depth").replace("png", "npy")
     right_depth = right_img.replace("imgs", "metric_depth").replace("png", "npy")
-    l_depth = np.load(left_depth)
-    r_depth = np.load(right_depth)
-
-    ###################### relative depth ##########################
-    # left_depth = left_img.replace("imgs", "depth")
-    # right_depth = right_img.replace("imgs", "depth")
-    # l_depth = cv2.imread(left_depth, cv2.IMREAD_GRAYSCALE)
-    # r_depth = cv2.imread(right_depth, cv2.IMREAD_GRAYSCALE)
-
-
-
     # right_depth = right_img.replace("img", "depth")
     assert os.path.exists(left_depth)
 
@@ -240,41 +223,19 @@ def load_data_path(img_path):
 
     # l_depth_unchanged = cv2.imread(left_depth, cv2.IMREAD_UNCHANGED)
     # l_depth = cv2.imread(left_depth, cv2.IMREAD_GRAYSCALE)
+    l_depth = np.load(left_depth)
+    r_depth = np.load(right_depth)
 
-    # l_depth = cv2.imread(left_depth, cv2.IMREAD_UNCHANGED) / 256.0
-    # r_depth = cv2.imread(right_depth, cv2.IMREAD_UNCHANGED) / 256.0
-    # plt.subplot(121)
-    # plt.imshow(left_)
-    # plt.title('left depth')
-    # plt.colorbar()
-    #
-    # plt.subplot(122)
-    # plt.imshow(right_)
-    # plt.title('right depth')
-    # plt.colorbar()
-    # plt.savefig(os.path.join(save_folder, "left_and_right_rgbs.png"))
-    # plt.close()
-    return left_img, l_depth, right_img, r_depth
+    left_seg_path = left_img.replace("imgs", "instrument_mask")
+    right_seg_path = right_img.replace("imgs", "instrument_mask")
+
+    left_seg = cv2.imread(left_seg_path, cv2.IMREAD_GRAYSCALE)
+    right_seg = cv2.imread(right_seg_path, cv2.IMREAD_GRAYSCALE)
+
+    return left_img, l_depth, right_img, r_depth, left_seg, right_seg
 
 
 # def draw_comparison(left_img, left_depth, right_img, right_depth, pred_left, pred_right)
-
-# class SparseGAState:
-#     def __init__(self, sparse_ga, should_delete=False, cache_dir=None, outfile_name=None):
-#         self.sparse_ga = sparse_ga
-#         self.cache_dir = cache_dir
-#         self.outfile_name = outfile_name
-#         self.should_delete = should_delete
-#
-#     def __del__(self):
-#         if not self.should_delete:
-#             return
-#         if self.cache_dir is not None and os.path.isdir(self.cache_dir):
-#             shutil.rmtree(self.cache_dir)
-#         self.cache_dir = None
-#         if self.outfile_name is not None and os.path.isfile(self.outfile_name):
-#             os.remove(self.outfile_name)
-#         self.outfile_name = None
 
 
 def predict_depth(save_folder, left_img, right_img, device, model, name):
@@ -416,6 +377,7 @@ def resize_resolution(pred, target):
     return pred
 
 
+
 # 记得用scale shift 来处理代码
 def scale_shift_invariant(pred, gt):
     # pred: predicted depth map (H, W), gt: ground truth depth map (H, W)
@@ -433,7 +395,6 @@ def scale_shift_invariant(pred, gt):
     # Normalize, adding a small epsilon to avoid division by zero
     pred_normalized = pred_centered / (scale_pred + 1e-6)
     gt_normalized = gt_centered / (scale_gt + 1e-6)
-    # shift = min(min(pred_normalized), min(gt_normalized))
     # pred_shifted = pred_normalized + np.abs(np.min(pred_normalized)) + 0.0001
     # gt_shifted = gt_normalized + np.abs(np.min(gt_normalized)) + 0.0001
 
@@ -461,168 +422,233 @@ def endoscope_evaluation(args):
     header = 'folder: [{}]'.format("endonerf")
 
     img_list = []
-    with open(os.path.join(args.input_dir, "split", "test.txt")) as file:
+    with open(os.path.join(args.input_dir, "split_seq", "test.txt")) as file:
         for line in file.readlines():
             line = line.strip('\n').split(',')[0]
             img_list.append(line)
     img_list = [os.path.join(args.input_dir, f) for f in img_list]
-
+    img_group = [img_list[i * 50:(i + 1) * 50] for i in range(int(len(img_list) / 50))]
     model_name = os.path.join(args.base_dir, args.model_name)
     assert os.path.exists(model_name), '{} does not exist'.format(model_name)
     # you can put the path to a local checkpoint in model_name if needed
     model = AsymmetricMASt3R.from_pretrained(model_name).to(device)
 
-    for img_path in metric_logger.log_every(img_list, print_freq=1, header=header):
-        # if args.data_name.split('_')[0] == "servct":
-        #     save_folder = os.path.join(output_dir, img_path.split('.')[0])
-        # elif args.data_name.split('_')[0] == "fundus":
-        #     save_folder = os.path.join(output_dir, img_path.split('/')[-4], img_path.split('/')[-3],
-        #                                img_path.split('/')[-1].split('.')[0])
-        # else:
-        #     save_folder = os.path.join(output_dir, img_path.split('/')[-2], img_path.split('/')[-1])
-        img_name = img_path.split('/')[-1].split('.')[0]
-        # save_folder = os.path.join(args.output_dir, img_name)
-        save_folder = args.output_dir
-        # os.makedirs(save_folder, exist_ok=True)
-        # assert os.path.exists(img_path)
-        left_img, left_depth, right_img, right_depth = load_data_path(img_path)
+    for group_id in range(int(len(img_list) / 50)):
+        img_group_path = img_group[group_id]
+        group_pred_depth = []
+        group_gt_depth = []
+        group_background_msk = []
+        group_tdv_values = []
 
-        try:
-            pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs = predict_depth(save_folder, left_img, right_img, device=args.device, model=model, name=img_name)
-        except:
-            print('[ERROR] {}'.format(img_name))
-            continue
-        # pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs = predict_depth(save_folder, left_img, right_img, device=args.device, model=model, name=img_name)
+        for img_path in metric_logger.log_every(img_list, print_freq=1, header=header):
+            # if args.data_name.split('_')[0] == "servct":
+            #     save_folder = os.path.join(output_dir, img_path.split('.')[0])
+            # elif args.data_name.split('_')[0] == "fundus":
+            #     save_folder = os.path.join(output_dir, img_path.split('/')[-4], img_path.split('/')[-3],
+            #                                img_path.split('/')[-1].split('.')[0])
+            # else:
+            #     save_folder = os.path.join(output_dir, img_path.split('/')[-2], img_path.split('/')[-1])
+            img_name = img_path.split('/')[-1].split('.')[0]
+            # save_folder = os.path.join(args.output_dir, img_name)
+            save_folder = args.output_dir
+            os.makedirs(save_folder, exist_ok=True)
+            # assert os.path.exists(img_path)
 
-        pred_left = resize_resolution(pred_left, left_depth)
+            left_img_path = img_path
+            right_img_path = left_img_path.replace('left', 'right')
+            left_depth_path = left_img_path.replace("imgs", "metric_depth").replace("png", "npy")
+            right_depth_path = right_img_path.replace("imgs", "metric_depth").replace("png", "npy")
+            left_seg_path = left_img_path.replace("imgs", "instrument_mask")
+            right_seg_path = right_img_path.replace("imgs", "instrument_mask")
 
-        plt.imshow(pred_left, cmap='jet')
-        plt.savefig(os.path.join(save_folder, 'depth.png'))
-        # left_depth = resize_resolution()
-        pred_right = resize_resolution(pred_right, right_depth)
+            if not (os.path.exists(left_img_path) and os.path.exists(right_img_path) and os.path.exists(left_seg_path) and os.path.exists(right_seg_path) and os.path.join(left_depth_path) and os.path.join(right_depth_path)):
+                continue
 
-        draw_picture(save_folder, pred_left, pred_right, left_img, right_img, left_depth, right_depth, img_name)
+            left_img, left_depth, right_img, right_depth, left_msk, right_msk = load_data_path(img_path)
 
-        # ---------------------------evaluation----------------------------#
-        # ---------------------------d1, d2, d3----------------------------#
-        total_metric = dict()
-        # for idx, (pred, gt) in enumerate(zip(pred_left, left_depth)):
-        pred_depth = pred_left
-        gt_depth = left_depth
-        min_depth = 0.001
-        max_depth = 255
+            left_msk = (left_msk / 255).astype("bool")
+            right_msk = (right_msk / 255).astype("bool")
 
-        def reverse(depth_map):
-            result = depth_map.copy()
-            d_min = np.min(depth_map)
-            d_max = np.max(depth_map)
-            if d_max != d_min:
-                result = d_max - (depth_map - d_min)
+            pred_left, pred_right, rgb_imgs, depth_imgs, confs_imgs = predict_depth(save_folder, left_img, right_img,
+                                                                                    device=args.device, model=model,
+                                                                                    name=img_name)
+
+            pred_left = resize_resolution(pred_left, left_depth)
+            pred_right = resize_resolution(pred_right, right_depth)
+
+            draw_picture(save_folder, pred_left, pred_right, left_img, right_img, left_depth, right_depth, img_name)
+            # ---------------------------depth evaluation----------------------------#
+            # ---------------------------d1, d2, d3----------------------------#
+            total_metric = dict()
+            # for idx, (pred, gt) in enumerate(zip(pred_left, left_depth)):
+            pred_depth = pred_left.copy()
+            # pred_depth = (pred_depth - pred_depth.min())/(pred_depth.max() - pred_depth)*256.0
+            gt_depth = left_depth.copy()
+            group_gt_depth.append(left_depth)
+            group_pred_depth.append(pred_left)
+            group_background_msk.append(left_msk)
+
+            min_depth = 0.001
+            max_depth = 255
+
+
+            ##-------------------overlook_shift_and_scared_invariant--------------------#
+            # pred_depth[left_msk == 0] = 0
+            # gt_depth[left_msk == 0] = 0
+
+            def align(gt, pred, eps=1e-6):
+                Y = gt
+                A = np.stack([pred, np.ones_like(pred)], axis=1)
+                scale, shift = np.linalg.lstsq(A, Y, rcond=None)[0]
+                output = shift + scale * pred
+                return np.maximum(output, eps)
+
+
+            if min_depth is not None and max_depth is not None:
+                # 创建 mask：深度值在 min_depth 和 max_depth 之间
+                mask = np.logical_and(gt_depth > min_depth, gt_depth < max_depth)
+                print(f"  Valid mask pixels: {mask.sum()} / {mask.size}")
+
+                # 保存原始形状以生成输出图像
+                original_shape = pred_depth.shape
+
+                # 应用 mask 展平 pred_depth 和 gt_depth
+                pred_depth = pred_depth[mask]
+                gt_depth = gt_depth[mask]
+
+                # 裁剪 pred_depth 到 [min_depth, max_depth]
+                pred_depth = pred_depth.copy()  # 避免修改原始数据
+                pred_depth[pred_depth < min_depth] = min_depth
+                pred_depth[pred_depth > max_depth] = max_depth
+
+                # 计算缩放比例并应用
+                # ratio = np.median(gt_depth) / (np.median(pred_depth) + 1e-5)
+                # pred_depth *= ratio
+                # gt_depth, pred_depth = scale_shift_invariant(pred_depth, gt_depth)
+                pred_depth = align(gt_depth, pred_depth)
+
+                if len(pred_depth) == 0:
+                    print("pass the %s" % (img_name))
+                    continue
+                pred_depth = (pred_depth - pred_depth.min()) / (pred_depth.max() - pred_depth.min())
+                gt_depth = (gt_depth - gt_depth.min()) / (gt_depth.max() - gt_depth.min())
+
+                # 创建与原始形状相同的零数组
+                pred_image = np.zeros(original_shape, dtype=pred_depth.dtype)
+
+                # 将缩放后的 pred_depth 赋值到 mask 对应的位置
+                pred_image[mask] = pred_depth
+
+                # 创建与原始形状相同的零数组用于 gt_image
+                gt_image = np.zeros(original_shape, dtype=gt_depth.dtype)
+                # 将 gt_depth 赋值到 mask 对应的位置
+                gt_image[mask] = gt_depth
             else:
-                return result
-            return result
-        ##-------------------overlook_shift_and_scared_invariant--------------------#
+                # 如果没有 min_depth 或 max_depth，直接使用原始 pred_depth 和 gt_depth
+                pred_image = pred_depth.copy()
+                gt_image = gt_depth.copy()
+                pred_depth = pred_depth.copy()
+                gt_depth = gt_depth.copy()
+                # 可选择是否应用 ratio 缩放
+                ratio = np.median(gt_depth) / (np.median(pred_depth) + 1e-5)
+                pred_depth *= ratio
+                pred_image = pred_depth
 
-        # 假设 eval_depth_numpy 和 total_metric 已定义
-        if min_depth is not None and max_depth is not None:
-            # 创建 mask：深度值在 min_depth 和 max_depth 之间
-            mask = np.logical_and(gt_depth > min_depth, gt_depth < max_depth)
-            print(f"  Valid mask pixels: {mask.sum()} / {mask.size}")
+                # pred 和 gt 用于评估
+            pred = pred_depth
+            gt = gt_depth
 
-            # 保存原始形状以生成输出图像
-            original_shape = pred_depth.shape
+            # 评估深度指标
+            depth_metric = eval_depth_numpy(pred, gt, None)
 
-            # 应用 mask 展平 pred_depth 和 gt_depth
-            pred_depth = pred_depth[mask]
-            gt_depth = gt_depth[mask]
+            # 更新 total_metric
+            for key, values in depth_metric.items():
+                total_metric[key] = depth_metric[key]
 
-            # 裁剪 pred_depth 到 [min_depth, max_depth]
-            pred_depth = pred_depth.copy()  # 避免修改原始数据
-            pred_depth[pred_depth < min_depth] = min_depth
-            pred_depth[pred_depth > max_depth] = max_depth
+            metric_logger.update(**total_metric)
 
-            # 计算缩放比例并应用
-            # ratio = np.median(gt_depth) / (np.median(pred_depth) + 1e-5)
-            # pred_depth *= ratio
-            gt_depth, pred_depth = scale_shift_invariant(pred_depth, gt_depth)
-            pred_depth = (pred_depth - pred_depth.min()) / (pred_depth.max() - pred_depth.min())
-            gt_depth = (gt_depth - gt_depth.min()) / (gt_depth.max() - gt_depth.min())
+            # 保存 pred_image 为 jet 颜色映射的图像
+            # 归一化 pred_image 到 [0, 1] 以用于颜色映射
+            if np.max(pred_image) > 0:  # 避免除以零
+                pred_image_normalized = (pred_image - np.min(pred_image)) / (np.max(pred_image) - np.min(pred_image))
+            else:
+                pred_image_normalized = pred_image  # 如果全为 0，保持不变
 
-            pred_depth = reverse(pred_depth)
-            gt_depth = reverse(gt_depth)
+            # 应用 jet 颜色映射
+            jet_cmap = matplotlib.cm.get_cmap('jet')
+            pred_image_rgb = jet_cmap(pred_image_normalized)[:, :, :3]  # 取 RGB 通道，忽略 alpha
+            pred_image_rgb = (pred_image_rgb * 255).astype(np.uint8)  # 转换为 [0, 255] 的 uint8 类型
 
-            ######## 需要mask
-            # 创建与原始形状相同的零数组
-            pred_image = np.zeros(original_shape, dtype=pred_depth.dtype)
-            # 将缩放后的 pred_depth 赋值到 mask 对应的位置
-            pred_image[mask] = pred_depth
+            # 使用 PIL 保存图像
+            pil_image = Image.fromarray(pred_image_rgb)
+            pil_image.save(os.path.join(save_folder, img_name + '_depth.png'))
 
-            # 创建与原始形状相同的零数组用于 gt_image
-            gt_image = np.zeros(original_shape, dtype=gt_depth.dtype)
-            # 将 gt_depth 赋值到 mask 对应的位置
-            gt_image[mask] = gt_depth
-        else:
-            # 如果没有 min_depth 或 max_depth，直接使用原始 pred_depth 和 gt_depth
-            pred_image = pred_depth.copy()
-            gt_image = gt_depth.copy()
-            pred_depth = pred_depth.copy()
-            gt_depth = gt_depth.copy()
-            # 可选择是否应用 ratio 缩放
-            ratio = np.median(gt_depth) / (np.median(pred_depth) + 1e-5)
-            pred_depth *= ratio
-            pred_image = pred_depth
+            # 保存 gt_image 为 jet 颜色映射的图像
+            # 归一化 gt_image 到 [0, 1] 以用于颜色映射
+            if np.max(gt_image) > 0:  # 避免除以零
+                gt_image_normalized = (gt_image - np.min(gt_image)) / (np.max(gt_image) - np.min(gt_image))
+            else:
+                gt_image_normalized = gt_image  # 如果全为 0，保持不变
 
+            # 应用 jet 颜色映射
+            gt_image_rgb = jet_cmap(gt_image_normalized)[:, :, :3]  # 取 RGB 通道，忽略 alpha
+            gt_image_rgb = (gt_image_rgb * 255).astype(np.uint8)  # 转换为 [0, 255] 的 uint8 类型
 
-        # pred 和 gt 用于评估
-        pred = pred_depth
-        gt = gt_depth
+            # 使用 PIL 保存 gt_image
+            pil_image_gt = Image.fromarray(gt_image_rgb)
+            pil_image_gt.save(os.path.join(save_folder, img_name + '_gt.png'))
 
-        # 评估深度指标
-        depth_metric = eval_depth_numpy(pred, gt, None)
+            # txt_dir = os.path.abspath(os.path.join(save_folder, ".."))
+            txt_dir = args.output_dir
+            with open(os.path.join(txt_dir, "eval_results.txt"), "a") as f:
+                f.write("img_path: %s \n" % img_path)
+                f.write(str(metric_logger))
+                f.write("\n \n")
 
-        # 更新 total_metric
-        for key, values in depth_metric.items():
-            total_metric[key] = depth_metric[key]
+        def scale(img):
+            scaled = 0.001 + (img - img.min()) * (100 - 0.1) / (img.max() - img.min())
+            return scaled
 
-        metric_logger.update(**total_metric)
+        def sequence_tdv(depths, gts, instrument_masks):
+            # depths: array of 50 depth maps (50, H, W)
+            # instrument_masks: array of 50 instrument masks (50, H, W), 1 = instrument
+            tdv_values = []
+            for t in range(len(depths)-1):
+                depth_t = scale(depths[t])
+                depth_t1 = scale(depths[t + 1])
 
-        # 保存 pred_image 为 jet 颜色映射的图像
-        # 归一化 pred_image 到 [0, 1] 以用于颜色映射
-        if np.max(pred_image) > 0:  # 避免除以零
-            pred_image_normalized = (pred_image - np.min(pred_image)) / (np.max(pred_image) - np.min(pred_image))
-        else:
-            pred_image_normalized = pred_image  # 如果全为 0，保持不变
+                gt_t = gts[t]
+                gt_t1 = gts[t+1]
 
-        # 应用 jet 颜色映射
-        jet_cmap = matplotlib.cm.get_cmap('jet')
-        pred_image_rgb = jet_cmap(pred_image_normalized)[:, :, :3]  # 取 RGB 通道，忽略 alpha
-        pred_image_rgb = (pred_image_rgb * 255).astype(np.uint8)  # 转换为 [0, 255] 的 uint8 类型
+                valid_gt_t = np.logical_and(gt_t > min_depth, gt_t < max_depth)
+                valid_gt_t1 = np.logical_and(gt_t1 > min_depth, gt_t1< max_depth)
+                valid_gt = valid_gt_t & valid_gt_t1
 
-        # 使用 PIL 保存图像
-        pil_image = Image.fromarray(pred_image_rgb)
-        pil_image.save(os.path.join(save_folder,img_name+'_depth.png'))
+                fg_mask = instrument_masks[t] | instrument_masks[t + 1]  # Union of foreground
+                bg_mask = ~fg_mask  # Reverse for background
+                valid_bg = bg_mask > 0
 
-        # 保存 gt_image 为 jet 颜色映射的图像
-        # 归一化 gt_image 到 [0, 1] 以用于颜色映射
-        if np.max(gt_image) > 0:  # 避免除以零
-            gt_image_normalized = (gt_image - np.min(gt_image)) / (np.max(gt_image) - np.min(gt_image))
-        else:
-            gt_image_normalized = gt_image  # 如果全为 0，保持不变
+                valid_mask = valid_gt & valid_bg
 
-        # 应用 jet 颜色映射
-        gt_image_rgb = jet_cmap(gt_image_normalized)[:, :, :3]  # 取 RGB 通道，忽略 alpha
-        gt_image_rgb = (gt_image_rgb * 255).astype(np.uint8)  # 转换为 [0, 255] 的 uint8 类型
+                diff = depth_t[valid_mask] - depth_t1[valid_mask]
+                tdv = np.mean(diff ** 2)
+                tdv_values.append(tdv)
+            tdv_seq = np.mean(tdv_values)
+            return tdv_seq
 
-        # 使用 PIL 保存 gt_image
-        pil_image_gt = Image.fromarray(gt_image_rgb)
-        pil_image_gt.save(os.path.join(save_folder, img_name+'_gt.png'))
-
-        # txt_dir = os.path.abspath(os.path.join(save_folder, ".."))
-        txt_dir = args.output_dir
+        tdv = sequence_tdv(group_pred_depth, group_gt_depth, group_background_msk)
+        group_tdv_values.append(tdv)
         with open(os.path.join(txt_dir, "eval_results.txt"), "a") as f:
-            f.write("img_path: %s \n" % img_path)
-            f.write(str(metric_logger))
+            f.write("tdv: %06f" % tdv)
             f.write("\n \n")
+
+    group_tdv_values = np.array(group_tdv_values)
+    tdv_seq = np.mean(group_tdv_values)
+    with open(os.path.join(txt_dir, "eval_results.txt"), "a") as f:
+        f.write("tdv: %06f"%tdv_seq)
+        f.write("\n \n")
+
+
 
 if __name__ == "__main__":
     args = parse_args()
