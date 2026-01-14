@@ -440,7 +440,7 @@ def endoscope_evaluation(args):
         group_background_msk = []
         group_tdv_values = []
 
-        for img_path in metric_logger.log_every(img_list, print_freq=1, header=header):
+        for img_path in metric_logger.log_every(img_group_path, print_freq=1, header=header):
             # if args.data_name.split('_')[0] == "servct":
             #     save_folder = os.path.join(output_dir, img_path.split('.')[0])
             # elif args.data_name.split('_')[0] == "fundus":

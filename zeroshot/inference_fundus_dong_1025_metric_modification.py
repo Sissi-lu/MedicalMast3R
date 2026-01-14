@@ -56,15 +56,15 @@ def parse_args():
     # where the checkpoints is
     parser.add_argument('--base-dir', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalMast3R/',
                         help="project location")
-    parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/fundusdong_mast3r_1002_embed_head_decoder_true_dataset_test=2000/checkpoint-best.pth')
+    # parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/fundusdong_mast3r_1002_embed_head_decoder_true_dataset_test=2000/checkpoint-best.pth')
     # where the endoscope is
     parser.add_argument('--input-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth/final_version_processed')
     # parser.add_argument('--input-data', type=str, help='cutting_tissues_twice or pulling_soft_tissues', default='cutting_tissues_twice')
-    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MASt3R_1023_finetune_sim_no_reverse_metric_modification')
-    # parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MASt3R_1023_synthetic_zeroshot')
+    # parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MASt3R_1023_finetune_sim_no_reverse_metric_modification')
+    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_dong/MASt3R_1119_zeroshot')
     parser.add_argument('--device', type=str, default='cuda')
     # parser.add_argument('--output-dir', type=str, default='/data/luxiaoxi/dataset/eyetube_phase4_results/anterior/23_Gauge_Plaque_Dissection_of_Anterior_Persistent_Fetal_Vasculature_in_a_2_week_old_Boy/dataset0/dust3r/')
-    # parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/naver/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth')
+    parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/naver/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth')
     return parser.parse_args()
 
 
@@ -557,8 +557,8 @@ def endoscope_evaluation(args):
             pred_depth = (pred_depth - pred_depth.min()) / (pred_depth.max() - pred_depth.min())
             gt_depth = (gt_depth - gt_depth.min()) / (gt_depth.max() - gt_depth.min())
 
-            # pred_depth = reverse(pred_depth)
-            # gt_depth = reverse(gt_depth)
+            pred_depth = reverse(pred_depth)
+            gt_depth = reverse(gt_depth)
 
             ######## 需要mask
             # 创建与原始形状相同的零数组
