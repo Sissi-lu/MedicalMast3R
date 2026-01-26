@@ -4,7 +4,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from matplotlib.colors import Normalize
-
+# import sobel
 # ────────────────────────────────────────────────
 #  Configuration
 # ────────────────────────────────────────────────
@@ -18,6 +18,8 @@ right_path  = os.path.join(data_dir, "right", f"{name}.jpg")
 render_path = os.path.join(output_dir, f"reproj_left_from_right_{name}.png")  # adjust if needed
 
 # ────────────────────────────────────────────────
+
+
 def load_image_rgb(path: str) -> np.ndarray:
     img = Image.open(path).convert("RGB")
     return np.array(img)
@@ -54,6 +56,92 @@ def compute_ssim(img1: np.ndarray, img2: np.ndarray) -> float:
     return float(ssim_map.mean())
 
 
+# import numpy as np
+from scipy.ndimage import gaussian_filter
+
+def compute_lpips_approx(right_img, render_img, normalize=True):
+    """
+    Approximate LPIPS using multi-scale luminance + contrast + structure similarity.
+    Pure NumPy + SciPy version — no deep learning.
+
+    Args:
+        right_img  (H,W,3) uint8 or float32 [0,255]
+        render_img (H,W,3) same shape & dtype
+        normalize  → return value in roughly [0,1] range (like official LPIPS)
+
+    Returns:
+        scalar distance (lower = more similar)
+    """
+    # Make sure inputs are float32 [0,255]
+    if right_img.dtype != np.float32:
+        right_img  = right_img.astype(np.float32)
+    if render_img.dtype != np.float32:
+        render_img = render_img.astype(np.float32)
+
+    if right_img.max() <= 1.0:  # probably [0,1] already
+        right_img  *= 255.0
+        render_img *= 255.0
+
+    # ──── Helpers ────
+    def luminance(img):
+        return 0.299 * img[...,0] + 0.587 * img[...,1] + 0.114 * img[...,2]
+
+    def contrast(lum):
+        mu  = gaussian_filter(lum, sigma=1.5)
+        mu2 = gaussian_filter(lum**2, sigma=1.5)
+        return np.sqrt(np.maximum(mu2 - mu**2, 0.0)) + 1e-10
+
+    def ssim_map(x, y, C1= (0.01*255)**2, C2=(0.03*255)**2):
+        mu_x  = gaussian_filter(x, 1.5)
+        mu_y  = gaussian_filter(y, 1.5)
+        mu_xy = mu_x * mu_y
+        mu_xx = mu_x**2
+        mu_yy = mu_y**2
+
+        sigma_xx = gaussian_filter(x**2, 1.5) - mu_xx
+        sigma_yy = gaussian_filter(y**2, 1.5) - mu_yy
+        sigma_xy = gaussian_filter(x*y,   1.5) - mu_xy
+
+        luminance_term = (2 * mu_xy + C1) / (mu_xx + mu_yy + C1)
+        contrast_term  = (2 * sigma_xy + C2) / (sigma_xx + sigma_yy + C2)
+
+        return luminance_term * contrast_term
+
+    # ──── Multi-scale pooling ────
+    scales = [1.0, 0.5, 0.25]          # three levels
+    weights = [0.5, 0.3, 0.2]          # higher weight to finer scale
+    distances = []
+
+    h, w = right_img.shape[:2]
+
+    for scale, wt in zip(scales, weights):
+        new_h = max(8, int(h * scale + 0.5))
+        new_w = max(8, int(w * scale + 0.5))
+
+        # downsample
+        from scipy.ndimage import zoom
+        r_small = zoom(right_img,  (new_h/h, new_w/w, 1.0), order=1)
+        g_small = zoom(render_img, (new_h/h, new_w/w, 1.0), order=1)
+
+        lum_r = luminance(r_small)
+        lum_g = luminance(g_small)
+
+        ssim_map_val = ssim_map(lum_r, lum_g)
+
+        # average similarity → distance
+        sim_mean = np.mean(ssim_map_val)
+        dist = 1.0 - sim_mean
+        distances.append(dist * wt)
+
+    total_dist = sum(distances)
+
+    if normalize:
+        # rough mapping — official LPIPS is usually 0.0–0.6 for natural images
+        total_dist = np.clip(total_dist / 0.42, 0.0, 1.0)   # tune divisor if needed
+
+    return float(total_dist)
+
+
 # ────────────────────────────────────────────────
 #  Main
 # ────────────────────────────────────────────────
@@ -83,10 +171,12 @@ assert right_img.shape == render_img.shape
 # ────────────────────────────────────────────────
 psnr_value = compute_psnr(right_img, render_img)
 ssim_value = compute_ssim(right_img, render_img)
+lpips_value = compute_lpips_approx(right_img, render_img )
 
 print("\n" + "═"*60)
 print(f"  PSNR : {psnr_value:6.2f} dB")
 print(f"  SSIM : {ssim_value:.4f}")
+print(f"  LPIPS : {lpips_value:.4f}")
 print("═"*60)
 
 # ────────────────────────────────────────────────
