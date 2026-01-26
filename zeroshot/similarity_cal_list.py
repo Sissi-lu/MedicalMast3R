@@ -46,7 +46,9 @@ if __name__ == '__main__':
     #  Configuration
     # ────────────────────────────────────────────────
     data_dir    = "/data_new/luxiaoxi/dataset/medical_depth/final_version_processed/part3/Dislocated_IOL"
-    output_dir  = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_real"
+    # output_dir  = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_real"
+    output_dir  = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_zeroshot"
+
 
     name_list = [f.split('.')[0] for f in sorted(os.listdir(os.path.join(data_dir, "left")))]
 
