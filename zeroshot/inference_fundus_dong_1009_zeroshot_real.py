@@ -7,7 +7,7 @@ from PIL import Image
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../dust3r')))
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 from dust3r.inference import inference
 from dust3r.model import AsymmetricCroCo3DStereo
@@ -51,6 +51,8 @@ import mast3r.utils.path_to_dust3r  # noqa
 # print("Current device:", torch.cuda.current_device())
 # print("Device name:", torch.cuda.get_device_name(torch.cuda.current_device()))
 
+# 最近最近
+
 def parse_args():
     parser = argparse.ArgumentParser()
     # where the checkpoints is
@@ -63,15 +65,15 @@ def parse_args():
 
 
     ## finetune
-    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_1121_video_real')
-    parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/fundusdong_mast3r_1002_embed_head_decoder_true_dataset_test=2000/checkpoint-best.pth')
+    # parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_real')
+    # parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/fundusdong_mast3r_1002_embed_head_decoder_true_dataset_test=2000/checkpoint-best.pth')
     # parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/checkpoints/fundusdong_mast3r_1002_embed_head_decoder_true_dataset_test=2000/checkpoint-best.pth')
 
     parser.add_argument('--device', type=str, default='cuda')
 
     ## zeroshot
-    # parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_1119_zeroshot')
-    # parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/naver/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth')
+    parser.add_argument('--output-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_zeroshot')
+    parser.add_argument('--model-name', type=str, default='/data_new/luxiaoxi/code_proj/MedicalMast3R/naver/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth')
     return parser.parse_args()
 
 
@@ -105,26 +107,35 @@ def online_showing(scene):
 
 
 
-def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
+def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr, name):
     pts3d, depthmaps, confs = scene.get_dense_pts3d(clean_depth=clean_depth)
     pts3d[0] = pts3d[0].view(confs[0].shape[0], confs[0].shape[1], -1)
     pts3d[1] = pts3d[1].view(confs[1].shape[0], confs[1].shape[1], -1)
 
-    # scene.pts3d = pts3d
-    # scene.depthmaps = depthmaps
 
-    # poses = scene.save_tum_poses(f'{save_folder}/pred_traj.txt')
-    # K = scene.save_intrinsics(f'{save_folder}/pred_intrinsics.txt')
-    # depth_maps = scene.save_depth_maps(save_folder)
-    # relative_depth_maps = scene.save_relative_depth_maps(save_folder)
+
+    scene.pts3d = pts3d
+    scene.depthmaps = depthmaps
+    pts3ds = to_numpy(scene.pts3d)
+    np.save(os.path.join(save_folder, "pts3d_left_%s.npy" % name), pts3ds[0])
+    np.save(os.path.join(save_folder, "pts3d_right_%s.npy" % name), pts3ds[1])
+
+    poses = scene.save_tum_poses(f'{save_folder}/%s_pred_traj.txt'%name)
+    K = scene.save_intrinsics(f'{save_folder}/%s_pred_intrinsics.txt'%name)
+    depth_maps = scene.save_depth_maps(f'{save_folder}/%s_depthmaps.txt'%name)
+    relative_depth_maps = scene.save_relative_depth_maps(save_folder)
 
     confidence_masks = to_numpy([c > min_conf_thr for c in confs])
 
     rgbimg = scene.imgs
     # depths = to_numpy(scene.get_depthmaps())
     depths = to_numpy(scene.depthmaps)
+    np.save(os.path.join(save_folder, "preddepth_left_%s.npy" % name), depths[0])
+    np.save(os.path.join(save_folder, "preddepth_%s.npy" % name), depths[1])
     depths[0] = depths[0].reshape(confs[0].shape[0], confs[0].shape[1])
     depths[1] = depths[1].reshape(confs[1].shape[0], confs[1].shape[1])
+
+
     confs = to_numpy([c for c in confs])
 
     from matplotlib import pyplot as pl
@@ -147,7 +158,7 @@ def save_prediction_results(save_folder, scene, clean_depth, min_conf_thr):
     # plt.savefig(os.path.join(save_folder, 'depth.png'))
 
     # np.save(os.path.join(save_folder, "rgb.npy"), rgb_imgs)
-    # np.save(os.path.join(save_folder, "rgb_depth.npy"), depth_imgs)
+    np.save(os.path.join(save_folder, "%s_rgb_depth.npy"%(name)), depth_imgs)
     # np.save(os.path.join(save_folder, "confs.npy"), confs_imgs)
 
     # ----------------find 2D-2D matches between the two images------------#
@@ -351,7 +362,7 @@ def predict_depth(save_folder, left_img, right_img, device, model, name):
     # scene.depthmaps = depthmaps
     # depths = to_numpy(scene.get_depthmaps())
 
-    rgb_imgs, depth_imgs, confs_imgs = save_prediction_results(save_folder, scene_state.sparse_ga, clean_depth, min_conf_thr)
+    rgb_imgs, depth_imgs, confs_imgs = save_prediction_results(save_folder, scene_state.sparse_ga, clean_depth, min_conf_thr, name)
 
 
     depths = scene_state.sparse_ga.get_depthmaps()
