@@ -79,7 +79,8 @@ def quaternion_translation_to_matrix(q: torch.Tensor, t: torch.Tensor) -> torch.
 
 if __name__ == "__main__":
     data_dir = "/data_new/luxiaoxi/dataset/medical_depth/eyetube/fundus/test"
-    output_dir = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_zeroshot"
+    # output_dir = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_zeroshot"
+    output_dir = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_real"
 
     name_list = [f.split('.')[0] for f in sorted(os.listdir(os.path.join(data_dir, "left")))]
 
