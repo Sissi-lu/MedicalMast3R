@@ -8,9 +8,11 @@ from matplotlib.colors import Normalize
 # ────────────────────────────────────────────────
 #  Configuration
 # ────────────────────────────────────────────────
-data_dir    = "/data_new/luxiaoxi/dataset/medical_depth/final_version_processed/part4"
-output_dir  = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0124_real"
-name        = "06732"
+data_dir    = "/data_new/luxiaoxi/dataset/medical_depth/eyetube/fundus/test"
+# output_dir  = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_real"
+output_dir = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_zeroshot"
+
+name        = "01504"
 
 right_path  = os.path.join(data_dir, "right", f"{name}.jpg")
 render_path = os.path.join(output_dir, f"reproj_left_from_right_{name}.png")  # adjust if needed

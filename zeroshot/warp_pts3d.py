@@ -78,11 +78,12 @@ def quaternion_translation_to_matrix(q: torch.Tensor, t: torch.Tensor) -> torch.
 
 
 if __name__ == "__main__":
-    data_dir = "/data_new/luxiaoxi/dataset/medical_depth/final_version_processed/part4"
-    output_dir = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0124_real"
+    data_dir = "/data_new/luxiaoxi/dataset/medical_depth/eyetube/fundus/test"
+    # output_dir = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0124_real"
+    output_dir = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_zeroshot"
 
     ##-----load_image----##
-    name = "03422"
+    name = "01504"
     right_image = read_image(os.path.join(data_dir, "right", "%s.jpg" % name))  # (C, H, W)
     left_image = read_image(os.path.join(data_dir, "left", "%s.jpg" % name))  # (C, H, W)
     # Transpose to (H, W, C)
@@ -236,4 +237,3 @@ if __name__ == "__main__":
         os.path.join(output_dir, f"depth_reproj_{name}.png")
     )
 
-    

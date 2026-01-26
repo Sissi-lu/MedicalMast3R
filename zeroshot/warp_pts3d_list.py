@@ -94,6 +94,8 @@ if __name__ == "__main__":
 
         ##-----load pointmap----##
         # pts3d_left = np.load(os.path.join(output_dir, "pts3d_left_%s.npy"%name))  # (H, W, 3)
+        if not os.path.exists(os.path.join(output_dir, "pts3d_right_%s.npy" % name)):
+            continue
         pts3d_right = np.load(os.path.join(output_dir, "pts3d_right_%s.npy" % name))  # (H, W, 3)
 
         ##-----load intrinsic----##

@@ -58,8 +58,10 @@ if __name__ == '__main__':
     for name in tqdm(name_list):
 
         right_path  = os.path.join(data_dir, "right", f"{name}.jpg")
-        render_path = os.path.join(output_dir, f"reproj_left_from_right_{name}.png")  # adjust if needed
 
+        render_path = os.path.join(output_dir, f"reproj_left_from_right_{name}.png")  # adjust if needed
+        if not os.path.exists(render_path):
+            continue
         # ────────────────────────────────────────────────
         # ────────────────────────────────────────────────
         #  Main
