@@ -131,8 +131,8 @@ if __name__ == '__main__':
     #  Configuration
     # ────────────────────────────────────────────────
     data_dir    = "/data_new/luxiaoxi/dataset/medical_depth/eyetube/fundus/test2"
-    output_dir  = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_real"
-    # output_dir  = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_zeroshot"
+    output_dir  = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0127_real"
+    # output_dir  = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0127_zeroshot"
 
 
     name_list = [f.split('.')[0] for f in sorted(os.listdir(os.path.join(data_dir, "left")))]
@@ -191,7 +191,7 @@ if __name__ == '__main__':
 
         print(f"Mean absolute error  : {abs_error_mean:.3f}  (max: {abs_error_max:.1f})")
 
-        with open(os.path.join(output_dir, "scores2.txt"), "a") as f:
+        with open(os.path.join(output_dir, "scores_0127.txt"), "a") as f:
             f.write(f"name: %s, " % name)
             f.write(f"  PSNR : {psnr_value:6.2f} dB, ")
             f.write(f"  SSIM : {ssim_value:.4f}, ")
@@ -259,5 +259,5 @@ if __name__ == '__main__':
     lpips = np.mean(np.array(lpips_list))
     err = np.mean(np.array(err_list))
 
-    with open(os.path.join(output_dir, "scores2.txt"), "a") as f:
+    with open(os.path.join(output_dir, "scores_0127.txt"), "a") as f:
         f.write(f"total ssim: {ssim}, psnr: {psnr}, lpips:{lpips} err:{err}")
