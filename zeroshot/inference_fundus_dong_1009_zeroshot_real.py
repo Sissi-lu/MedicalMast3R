@@ -58,7 +58,7 @@ def parse_args():
     # where the checkpoints is
     parser.add_argument('--base-dir', type=str, default='/data/luxiaoxi/code_proj/depth_estimation/MedicalMast3R/',
                         help="project location")
-    parser.add_argument('--input-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth/eyetube/fundus/test')
+    parser.add_argument('--input-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth/eyetube/fundus/test2')
     # parser.add_argument('--input-dir', type=str, default='/data_new/luxiaoxi/dataset/medical_depth/final_version_processed/part3/Dislocated_IOL')
 
     # parser.add_argument('--input-data', type=str, help='cutting_tissues_twice or pulling_soft_tissues', default='cutting_tissues_twice')
