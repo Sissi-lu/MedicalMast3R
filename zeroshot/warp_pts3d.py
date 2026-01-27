@@ -79,8 +79,8 @@ def quaternion_translation_to_matrix(q: torch.Tensor, t: torch.Tensor) -> torch.
 
 if __name__ == "__main__":
     data_dir = "/data_new/luxiaoxi/dataset/medical_depth/eyetube/fundus/test"
-    # output_dir = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0124_real"
-    output_dir = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_zeroshot"
+    output_dir = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_real"
+    # output_dir = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_zeroshot"
 
     ##-----load_image----##
     name = "01504"
@@ -220,8 +220,8 @@ if __name__ == "__main__":
     rendered = rendered.squeeze(0).permute(1, 2, 0)  # (H,W,3)
 
     # optional: mask out invalid / very far regions
-    # valid = (grid[..., 0].abs() <= 1) & (grid[..., 1].abs() <= 1) & mask_valid & (z_left < 5.0)  # ← tune 5.0
-    # rendered[~valid] = 0  # or torch.nan, or left_image value, etc.
+    valid = (grid[..., 0].abs() <= 1) & (grid[..., 1].abs() <= 1) & mask_valid & (z_left < z_left.max())  # ← tune 5.0
+    rendered[~valid] = 0  # or torch.nan, or left_image value, etc.
 
     # ────────────────────────────────────────────────
     #  Save / visualize

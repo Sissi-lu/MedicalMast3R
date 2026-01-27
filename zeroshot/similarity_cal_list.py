@@ -130,7 +130,7 @@ if __name__ == '__main__':
     # ────────────────────────────────────────────────
     #  Configuration
     # ────────────────────────────────────────────────
-    data_dir    = "/data_new/luxiaoxi/dataset/medical_depth/eyetube/fundus/test"
+    data_dir    = "/data_new/luxiaoxi/dataset/medical_depth/eyetube/fundus/test2"
     output_dir  = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_real"
     # output_dir  = "/data_new/luxiaoxi/dataset/medical_depth_output/fundus_real/MASt3R_0126_zeroshot"
 
@@ -180,28 +180,27 @@ if __name__ == '__main__':
         ssim_value = compute_ssim(right_img, render_img)
         lpips_value = compute_lpips_approx(right_img, render_img)
 
-        print("\n" + "═"*60)
-        print(f"name: %s\n"%name)
-        print(f"  PSNR : {psnr_value:6.2f} dB")
-        print(f"  SSIM : {ssim_value:.4f}")
-        print(f"  LPIPS : {lpips_value:.4f}")
-
-        print("═"*60)
-
-        ssim_list.append(ssim_value)
-        psnr_list.append(psnr_value)
-        lpips_list.append(lpips_value)
-
         # ────────────────────────────────────────────────
         #  Error calculation
         # ────────────────────────────────────────────────
         abs_error = np.abs(right_img.astype(np.float32) - render_img.astype(np.float32))
-        abs_error_rgb_mean = abs_error.mean(axis=2)          # average over channels
+        abs_error_rgb_mean = abs_error.mean(axis=2)  # average over channels
 
         abs_error_mean = abs_error_rgb_mean.mean()
-        abs_error_max  = abs_error_rgb_mean.max()
+        abs_error_max = abs_error_rgb_mean.max()
 
         print(f"Mean absolute error  : {abs_error_mean:.3f}  (max: {abs_error_max:.1f})")
+
+        with open(os.path.join(output_dir, "scores2.txt"), "a") as f:
+            f.write(f"name: %s, " % name)
+            f.write(f"  PSNR : {psnr_value:6.2f} dB, ")
+            f.write(f"  SSIM : {ssim_value:.4f}, ")
+            f.write(f"  LPIPS : {lpips_value:.4f}, ")
+            f.write(f"Mean absolute error  : {abs_error_mean:.3f}  (max: {abs_error_max:.1f}) \n")
+
+        ssim_list.append(ssim_value)
+        psnr_list.append(psnr_value)
+        lpips_list.append(lpips_value)
         err_list.append(abs_error_mean)
         # ────────────────────────────────────────────────
         #  Create error heatmap + colorbar
@@ -260,4 +259,5 @@ if __name__ == '__main__':
     lpips = np.mean(np.array(lpips_list))
     err = np.mean(np.array(err_list))
 
-    print(f"ssim: {ssim}, psnr: {psnr}, lpips:{lpips} err:{err}")
+    with open(os.path.join(output_dir, "scores2.txt"), "a") as f:
+        f.write(f"total ssim: {ssim}, psnr: {psnr}, lpips:{lpips} err:{err}")
